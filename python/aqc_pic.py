@@ -8,48 +8,15 @@
 
 import argparse
 import os
+import torch
+import torchvision
+import torchvision.transforms.functional as F
+import math
 
-import numpy as np
-from skimage import io, transform
+#from skimage import io, transform
 from minc2_simple import minc2_file 
 
-
-def minc_to_slices(path):
-
-    input_minc=minc2_file(path)
-    input_minc.setup_standard_order()
-
-    #load into standard volume
-    sample=input_minc.load_complete_volume(minc2_file.MINC2_FLOAT)
-    
-    # normalize input
-    _min=np.min(sample)
-    _max=np.max(sample)
-    sample=(sample-_min)*(1.0/(_max-_min))
-
-    sz=sample.shape
-    
-    input_images=[sample[int(sz[0]/2),:,:],
-                  sample[:,:,int(sz[2]/2)],
-                  sample[:,int(sz[1]/2),:] ]
-    
-    # flip, resize and crop
-    for i in range(3):
-        # 
-        _scale=min(256.0/input_images[i].shape[0],256.0/input_images[i].shape[1])
-        # vertical flip and resize
-        input_images[i]=transform.rescale(input_images[i][::-1,:], _scale, mode='constant', clip=False)
-
-        sz=input_images[i].shape
-        # pad image 
-        dummy=np.zeros((256,256),)
-        dummy[int((256-sz[0])/2) : int((256-sz[0])/2)+sz[0], int((256-sz[1])/2): int((256-sz[1])/2)+sz[1]] = input_images[i]
-
-        # crop
-        input_images[i]=dummy[16:240,16:240]
-   
-    return input_images
-
+from aqc_data import load_minc_images
 
 def parse_options():
 
@@ -60,8 +27,16 @@ def parse_options():
     parser.add_argument("volume", type=str, 
                         help="Input minc volume ")
     parser.add_argument("output", type=str, 
-                        help="Output image prefix: <prefix>_{0,1,2}.jpg")
-
+                        help="Output image prefix: <prefix>_{0,1,2}.{sfx}")
+    parser.add_argument("--sfx", type=str, 
+                        help="Output image suffix",
+                        default='.jpg')
+    parser.add_argument("--quality", type=int, 
+                        help="Jpeg quality",
+                        default=92)
+    parser.add_argument("--order", type=int, 
+                        help="Resample order",
+                        default=1)
     params = parser.parse_args()
     
     return params
@@ -70,6 +45,10 @@ def parse_options():
 if __name__ == '__main__':
     params = parse_options()
 
-    slices = minc_to_slices(params.volume)
+    slices = load_minc_images(params.volume)
     for i,_ in enumerate(slices):
-        io.imsave(params.output+"_{}.jpg".format(i),slices[i])
+        arr=((slices[i]+0.5)*255).clamp(0,255).to(torch.uint8)
+        if params.sfx.endswith("jpg"):
+            torchvision.io.write_jpeg(arr,f"{params.output}_{i}{params.sfx}",quality=params.quality)
+        else:
+            torchvision.io.write_png(arr,f"{params.output}_{i}{params.sfx}")

@@ -7,9 +7,12 @@
 import os
 import collections
 
-from skimage import io, transform
+#from skimage import io, transform
 
 import torch
+import torchvision
+import torchvision.transforms.functional as F
+
 import numpy as np
 import math
 
@@ -70,52 +73,54 @@ def load_qc_images(imgs):
     ret = []
     for i, j in enumerate(imgs):
         try:
-            im = io.imread(j)
+            im = torchvision.read_image(j)
         except :
             raise NameError(f"Problem reading {j}")
-        assert im.shape == (224, 224)
-        ret.append(torch.from_numpy(im).unsqueeze_(0).float()/255.0-0.5)
+        assert im.shape == (1, 224, 224) # expect grays
+        ret.append(im.float()/255.0-0.5)
     return ret
 
 
-def load_minc_images(path,winsorize_low=5,winsorize_high=95):
+def load_minc_images(path):
     from minc2_simple import minc2_file 
-    import numpy as np
 
     input_minc=minc2_file(path)
     input_minc.setup_standard_order()
 
-    sz=input_minc.shape
-		
-    input_images = [input_minc[sz[0]//2, :, :],
-                    input_minc[:, :, sz[2]//2],
-                    input_minc[:, sz[1]//2, :]]
+    w=input_minc.load_complete_volume_tensor()
+    sz=w.shape
+    w=(w-w.min())/(w.max()-w.min())-0.5
 
-     # normalize between 5 and 95th percentile
-    _all_voxels=np.concatenate( tuple(( np.ravel(i) for i in input_images)) )
-    # _all_voxels=input_minc[:,:,:] # this is slower
-    _min=np.percentile(_all_voxels,winsorize_low)
-    _max=np.percentile(_all_voxels,winsorize_high)
-    input_images = [(i-_min)*(1.0/(_max-_min))-0.5 for i in input_images]
-    
+    input_images = [w[sz[0]//2, :, :],
+                    w[:, :, sz[2]//2],
+                    w[:, sz[1]//2, :]]
+        
     # flip, resize and crop
     for i in range(3):
         # 
-        _scale = min(256.0/input_images[i].shape[0],256.0/input_images[i].shape[1])
+        _scale = min(256.0/input_images[i].shape[0],
+                     256.0/input_images[i].shape[1])
         # vertical flip and resize
-        input_images[i] = transform.rescale(input_images[i][::-1, :], _scale, mode='constant', clip=False, anti_aliasing=False, multichannel=False)
 
-        sz = input_images[i].shape
-        # pad image 
-        dummy = np.full((256, 256),-0.5)
-        dummy[int((256-sz[0])/2): int((256-sz[0])/2)+sz[0], int((256-sz[1])/2): int((256-sz[1])/2)+sz[1]] = input_images[i]
+        new_sz=[ math.floor(input_images[i].shape[0]*_scale),
+                 math.floor(input_images[i].shape[1]*_scale) ]
 
-        # crop
-        input_images[i]=dummy[16:240,16:240]
+        dummy=torch.full([1, 256, 256],-0.5)
+
+        dummy[:,(256-new_sz[0])//2:(256-new_sz[0])//2+new_sz[0], 
+                (256-new_sz[1])//2:(256-new_sz[1])//2+new_sz[1]] = \
+            F.resize(input_images[i].flip(0).unsqueeze(0),
+                     size=new_sz, antialias=True)
+
+        # crop, convert to proper type
+        input_images[i]=dummy[:,16:240, 16:240]# +0.5)*255).clamp(0,255).to(torch.uint8)
    
-    return [torch.from_numpy(i).float().unsqueeze_(0) for i in input_images]
+    return input_images
 
-def load_talairach_mgh_images(path,winsorize_low=5,winsorize_high=95):
+
+
+
+def load_talairach_mgh_images(path):
     import nibabel as nib
     import numpy as np
     from nibabel.affines import apply_affine
@@ -181,34 +186,35 @@ def load_talairach_mgh_images(path,winsorize_low=5,winsorize_high=95):
     # X-Y
     slice_2 = np.pad(slice_2[31:(31+193),:],((0,0),(4,0)),constant_values=(0.0, 0.0),mode='constant')[:,0:229]
 
+    _min=np.min(img_data)
+    _max=np.max(img_data)
+
     input_images = [slice_2.T,
                     slice_0.T,
                     slice_1.T
                     ]
 
-     # normalize between 5 and 95th percentile
-    _all_voxels=np.concatenate( tuple(( np.ravel(i) for i in input_images)) )
-    # _all_voxels=input_minc[:,:,:] # this is slower
-    _min=np.percentile(_all_voxels,winsorize_low)
-    _max=np.percentile(_all_voxels,winsorize_high)
-    input_images = [(i-_min)*(1.0/(_max-_min))-0.5 for i in input_images]
-    
+    input_images = [(i-_min)/(_max-_min)-0.5 for i in input_images]
+
     # flip, resize and crop
     for i in range(3):
-        # 
-        _scale = min(256.0/input_images[i].shape[0],256.0/input_images[i].shape[1])
+        _scale = min(256.0/input_images[i].shape[0],
+                     256.0/input_images[i].shape[1])
         # vertical flip and resize
-        input_images[i] = transform.rescale(input_images[i][::-1, :], _scale, mode='constant', clip=False, anti_aliasing=False, multichannel=False)
 
-        sz = input_images[i].shape
-        # pad image 
-        dummy = np.full((256, 256),-0.5)
-        dummy[int((256-sz[0])/2): int((256-sz[0])/2)+sz[0], int((256-sz[1])/2): int((256-sz[1])/2)+sz[1]] = input_images[i]
+        new_sz=[ math.floor(input_images[i].shape[0]*_scale),
+                 math.floor(input_images[i].shape[1]*_scale) ]
 
+        dummy=torch.full([1, 256, 256],-0.5)
+
+        dummy[:,(256-new_sz[0])//2:(256-new_sz[0])//2+new_sz[0], 
+                (256-new_sz[1])//2:(256-new_sz[1])//2+new_sz[1]] = \
+            F.resize(torch.from_numpy(i).float().flip(0).unsqueeze(0),
+                     size=new_sz, antialias=True)
         # crop
-        input_images[i]=dummy[16:240,16:240]
+        input_images[i]=dummy[:,16:240,16:240]
    
-    return [torch.from_numpy(i).float().unsqueeze_(0) for i in input_images]
+    return input_images 
 
 
 

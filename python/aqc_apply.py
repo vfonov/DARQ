@@ -146,7 +146,14 @@ if __name__ == '__main__':
                         print("{},{}".format(i,j))
         else:
             if params.image is not None:
-                inputs = load_qc_images( [params.image+'_0.jpg', params.image+'_1.jpg', params.image+'_2.jpg'])
+                if os.path.exists(params.image+'_0.jpg'):
+                    inputs = load_qc_images( [params.image+'_0.jpg', params.image+'_1.jpg', params.image+'_2.jpg'])
+                elif os.path.exists(params.image+'_0.png'):
+                    inputs = load_qc_images( [params.image+'_0.png', params.image+'_1.png', params.image+'_2.png'])
+                else:
+                    print("Missing input image(s): {}_0.jpg or {}_0.png".format(params.image,params.image),file=sys.stderr)
+                    exit(1)
+
             elif params.volume is not None:
                 tmpdir=None
                 volume=params.volume
