@@ -73,7 +73,7 @@ def load_qc_images(imgs):
     ret = []
     for i, j in enumerate(imgs):
         try:
-            im = torchvision.read_image(j)
+            im = torchvision.io.read_image(j)
         except :
             raise NameError(f"Problem reading {j}")
         assert im.shape == (1, 224, 224) # expect grays

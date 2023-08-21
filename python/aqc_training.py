@@ -175,6 +175,8 @@ def parse_options():
                         help="Apply gradient clipping")
     parser.add_argument("--l2", type=float, default=None,
                         help="Apply l2 regularization")
+    parser.add_argument("--augment", type=float, default=None,
+                        help="Apply random intensity augmentation (amplitude)")
     parser.add_argument("--balance",action="store_true",default=False,
                         help="Balance validation and testing sample")
     parser.add_argument("--dist",action="store_true",default=False,
@@ -191,6 +193,7 @@ if __name__ == '__main__':
     params.ref = params.ref
     grad_norm = params.clip
     regularize_l2 = params.l2
+    augment = params.augment
     init_lr = params.lr
     warmup_lr = params.warmup_lr
     warmup_iter = params.warmup_iter

@@ -38,10 +38,6 @@ def parse_options():
                         help="Input minc volume (need minc2 simple)")
     parser.add_argument("--resample", type=str,
                         help="Resample to standard space using provided xfm, needs mincresample")
-    parser.add_argument("--low", type=float,
-                        help="Winsorize intensities in the input image", default=5.0)
-    parser.add_argument("--high", type=float, 
-                        help="Winsorize intensities in the input image", default=95.0)
     parser.add_argument("--load", type=str, default=None,
                         help="Load pretrained model (will try to  load from {}".format(default_data_dir))
     parser.add_argument("--net", choices=['r18', 'r34', 'r50','r101','r152','sq101'],
@@ -107,8 +103,6 @@ if __name__ == '__main__':
         if params.batch is not None:
             if not params.batch_pics :
                 dataset = MincVolumesDataset(csv_file=params.batch,
-                    winsorize_low=params.low,
-                    winsorize_high=params.high,
                     data_prefix=default_data_dir + "/../data",
                     use_ref=use_ref)
             else:
@@ -175,7 +169,7 @@ if __name__ == '__main__':
                         raise
                     volume=tmp_vol
                 
-                inputs = load_minc_images(volume,winsorize_low=params.low,winsorize_high=params.high)
+                inputs = load_minc_images(volume)
                 if tmpdir is not None:
                     shutil.rmtree(tmpdir)
             elif params.freesurfer is not None:
