@@ -306,12 +306,20 @@ if __name__ == '__main__':
                 elif i_batch == warmup_iter:
                     for g in optimizer.param_groups :
                         g[ 'lr' ] = init_lr
-
+            
             inputs = sample_batched['image'].cuda()
             if predict_dist:
                 dist = sample_batched['dist'].float().cuda()
             else:
                 labels = sample_batched['status'].cuda()
+
+            # augment data: add random shift and multipy  by random factor
+            if augment is not None:
+                bs = inputs.size(0)
+                with torch.no_grad():
+                    ran_mul = torch.rand(bs,1,1,1,device='cuda') * augment
+                    ran_shift = torch.rand(bs,1,1,1,device='cuda') * augment
+                    inputs = inputs * ran_mul + ran_shift
 
             # zero the parameter gradients
             optimizer.zero_grad()
