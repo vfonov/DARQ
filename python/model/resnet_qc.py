@@ -319,7 +319,7 @@ def resnet_qc_18(pretrained: bool = False, progress: bool = True, **kwargs) -> R
                    **kwargs)
     if pretrained:
         # load basic Resnet model
-        model_ft = models.resnet18(pretrained=True)
+        model_ft = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1)
         model.load_from_std(model_ft)
     return model
 
