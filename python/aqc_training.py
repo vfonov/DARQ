@@ -175,7 +175,7 @@ def parse_options():
                         help="Apply gradient clipping")
     parser.add_argument("--l2", type=float, default=None,
                         help="Apply l2 regularization")
-    parser.add_argument("--augment", type=float, default=None,
+    parser.add_argument("--augment", type=float, default=0.0,
                         help="Apply random intensity augmentation (amplitude)")
     parser.add_argument("--balance",action="store_true",default=False,
                         help="Balance validation and testing sample")
@@ -198,12 +198,12 @@ if __name__ == '__main__':
     warmup_lr = params.warmup_lr
     warmup_iter = params.warmup_iter
     predict_dist = params.dist
-    
-    all_samples_main = load_full_db(data_prefix + os.sep + db_name, 
+
+    all_samples_main = load_full_db(data_prefix + os.sep + db_name,
                    data_prefix, True, table="qc_all")
 
-    # if distance training is required 
-    all_samples_aug = load_full_db(data_prefix + os.sep + db_name, 
+    # if distance training is required
+    all_samples_aug = load_full_db(data_prefix + os.sep + db_name,
                    data_prefix, True, table="qc_all_aug",
                    use_variant_dist=params.dist )
 
@@ -211,16 +211,16 @@ if __name__ == '__main__':
     print("Aug  samples: {}".format(len(all_samples_aug)))
 
     training, validation, testing = split_dataset(
-        all_samples_main, fold=params.fold, 
-        folds=params.folds, 
-        validation=params.validation, 
-        shuffle=True, seed=params.seed, 
+        all_samples_main, fold=params.fold,
+        folds=params.folds,
+        validation=params.validation,
+        shuffle=True, seed=params.seed,
         sec_samples=all_samples_aug )
 
     train_dataset    = QCDataset(training, data_prefix,   use_ref=params.ref)
     validate_dataset = QCDataset(validation, data_prefix, use_ref=params.ref)
     testing_dataset  = QCDataset(testing, data_prefix,    use_ref=params.ref)
-    
+
     if params.balance:
         validate_dataset.balance()
         testing_dataset.balance()
@@ -229,20 +229,20 @@ if __name__ == '__main__':
     print("Validation {} samples, {} unique subjects, balance {}".format(len(validate_dataset),validate_dataset.n_subjects(), validate_dataset.get_balance()))
     print("Testing    {} samples, {} unique subjects, balance {}".format(len(testing_dataset), testing_dataset.n_subjects(), testing_dataset.get_balance()))
 
-    training_dataloader = DataLoader(train_dataset, 
+    training_dataloader = DataLoader(train_dataset,
                           batch_size=params.batch_size,
-                          shuffle=True, 
+                          shuffle=True,
                           num_workers=params.workers,
                           drop_last=True,
                           pin_memory=True)
-    
-    validation_dataloader = DataLoader(validate_dataset, 
+
+    validation_dataloader = DataLoader(validate_dataset,
                           batch_size=params.batch_size,
-                          shuffle=False, 
+                          shuffle=False,
                           num_workers=params.workers,
                           drop_last=False)
 
-    model = get_qc_model(params, use_ref=params.ref, 
+    model = get_qc_model(params, use_ref=params.ref,
                         pretrained=params.pretrained,
                         predict_dist=predict_dist)
 
@@ -250,7 +250,7 @@ if __name__ == '__main__':
     #criterion = nn.CrossEntropyLoss()
     if params.adam:
         # parameters from LUA version
-        optimizer = optim.Adam(model.parameters(), 
+        optimizer = optim.Adam(model.parameters(),
            lr=init_lr, betas=(0.9, 0.999), eps=1e-08, weight_decay=0.0001)
     else:
         optimizer = optim.SGD(model.parameters(), lr=params.lr, momentum=0.9, weight_decay=0.0001)
@@ -306,7 +306,7 @@ if __name__ == '__main__':
                 elif i_batch == warmup_iter:
                     for g in optimizer.param_groups :
                         g[ 'lr' ] = init_lr
-            
+
             inputs = sample_batched['image'].cuda()
             if predict_dist:
                 dist = sample_batched['dist'].float().cuda()
@@ -314,12 +314,14 @@ if __name__ == '__main__':
                 labels = sample_batched['status'].cuda()
 
             # augment data: add random shift and multipy  by random factor
-            if augment is not None:
+            if augment>0.0:
                 bs = inputs.size(0)
                 with torch.no_grad():
-                    ran_mul = torch.rand(bs,1,1,1,device='cuda') * augment
+                    # random shift and multipy  by random factor
+                    ran_mul = torch.rand(bs,1,1,1,device='cuda') * augment + 1.0
                     ran_shift = torch.rand(bs,1,1,1,device='cuda') * augment
-                    inputs = inputs * ran_mul + ran_shift
+                # apply augmentation
+                inputs = inputs * ran_mul + ran_shift
 
             # zero the parameter gradients
             optimizer.zero_grad()
