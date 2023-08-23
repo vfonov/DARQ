@@ -26,7 +26,8 @@ def load_full_db(qc_db_path,
                 data_prefix, 
                 validate_presence=False, 
                 feat=3, table="qc_all", 
-                use_variant_dist=None):
+                use_variant_dist=None,
+                png=False):
     """Load complete QC database into memory
     """
     import sqlite3
@@ -44,6 +45,7 @@ def load_full_db(qc_db_path,
 
         samples = []
         subjects = []
+        sfx='png' if png else 'jpg'
 
         for line in qc_db.execute(query):
             variant, cohort, subject, visit, path, xfm, _pass, dist = line
@@ -55,7 +57,7 @@ def load_full_db(qc_db_path,
 
             qc_files=[]
             for i in range(feat):
-                qc_file='{}/{}/qc/aqc_{}_{}_{}.jpg'.format(data_prefix, path, subject, visit, i)
+                qc_file=f'{data_prefix}/{path}/qc/aqc_{subject}_{visit}_{i}.{sfx}'
                 
                 if validate_presence and not os.path.exists(qc_file):
                     print("Check:", qc_file)
@@ -116,8 +118,6 @@ def load_minc_images(path):
         input_images[i]=dummy[:,16:240, 16:240]# +0.5)*255).clamp(0,255).to(torch.uint8)
    
     return input_images
-
-
 
 
 def load_talairach_mgh_images(path):
@@ -368,12 +368,10 @@ class MincVolumesDataset(Dataset):
         file_list - list of minc files to load
         csv_file - name of csv file to load list from (first column)
     """
-    def __init__(self, file_list=None, csv_file=None, winsorize_low=5, winsorize_high=95, 
+    def __init__(self, file_list=None, csv_file=None, 
                     use_ref=False, data_prefix=None):
         self.use_ref  = use_ref
         self.data_prefix = data_prefix
-        self.winsorize_low=winsorize_low
-        self.winsorize_high=winsorize_high
 
         if file_list is not None:
             self.file_list = file_list
@@ -396,7 +394,7 @@ class MincVolumesDataset(Dataset):
         return len(self.file_list)
 
     def __getitem__(self, idx):
-        _images = load_minc_images(self.file_list[idx], winsorize_low=self.winsorize_low, winsorize_high=self.winsorize_high)
+        _images = load_minc_images(self.file_list[idx])
 
         if self.use_ref:
             _images = torch.cat( [ item for sublist in zip(_images, self.ref_img) for item in sublist ] )

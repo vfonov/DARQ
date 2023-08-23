@@ -153,10 +153,16 @@ def parse_options():
                     help="Network type",default='r18')
     parser.add_argument("--adam",action="store_true",default=False,
                         help="Use ADAM instead of SGD") 
+    parser.add_argument("--adamw",action="store_true",default=False,
+                        help="Use AdamW instead of SGD") 
     parser.add_argument("--pretrained",action="store_true",default=False,
                         help="Use ImageNet pretrained models") 
     parser.add_argument("--lr",type=float, default=0.0001,
                         help="Learning rate")
+    parser.add_argument("--lr_gamma",type=float, default=0.0,
+                        help="Learning rate decay gamma")
+    parser.add_argument("--weight_decay",type=float, default=0.0001,
+                        help="Adam and AdamW weight_decay")
     parser.add_argument("--warmup_lr",type=float, default=1e-9,
                         help="Warmup learning rate")
     parser.add_argument("--warmup_iter",type=int, default=0,
@@ -173,7 +179,7 @@ def parse_options():
                         help="Perform frequent validations, every N minibatches (for debugging)")
     parser.add_argument("--clip", type=float, default=0.0,
                         help="Apply gradient clipping")
-    parser.add_argument("--l2", type=float, default=None,
+    parser.add_argument("--l2", type=float, default=0.0,
                         help="Apply l2 regularization")
     parser.add_argument("--augment", type=float, default=0.0,
                         help="Apply random intensity augmentation (amplitude)")
@@ -181,6 +187,8 @@ def parse_options():
                         help="Balance validation and testing sample")
     parser.add_argument("--dist",action="store_true",default=False,
                         help="Predict misregistration distance instead of class membership")
+    parser.add_argument("--png",action="store_true",default=False,
+                        help="PNG file format for training data")
 
     params = parser.parse_args()
     
@@ -193,11 +201,13 @@ if __name__ == '__main__':
     params.ref = params.ref
     grad_norm = params.clip
     regularize_l2 = params.l2
+    weight_decay = params.weight_decay
     augment = params.augment
     init_lr = params.lr
     warmup_lr = params.warmup_lr
     warmup_iter = params.warmup_iter
     predict_dist = params.dist
+    lr_gamma = params.lr_gamma
 
     all_samples_main = load_full_db(data_prefix + os.sep + db_name,
                    data_prefix, True, table="qc_all")
@@ -205,7 +215,8 @@ if __name__ == '__main__':
     # if distance training is required
     all_samples_aug = load_full_db(data_prefix + os.sep + db_name,
                    data_prefix, True, table="qc_all_aug",
-                   use_variant_dist=params.dist )
+                   use_variant_dist=params.dist,
+                    png=params.png )
 
     print("Main samples: {}".format(len(all_samples_main)))
     print("Aug  samples: {}".format(len(all_samples_aug)))
@@ -251,10 +262,17 @@ if __name__ == '__main__':
     if params.adam:
         # parameters from LUA version
         optimizer = optim.Adam(model.parameters(),
-           lr=init_lr, betas=(0.9, 0.999), eps=1e-08, weight_decay=0.0001)
+           lr=init_lr, betas=(0.9, 0.999), eps=1e-08, weight_decay=weight_decay)
+    elif params.adamw:
+        optimizer = optim.AdamW(model.parameters(),
+           lr=init_lr, weight_decay=weight_decay)
     else:
-        optimizer = optim.SGD(model.parameters(), lr=params.lr, momentum=0.9, weight_decay=0.0001)
-        scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=7, gamma=0.1)
+        optimizer = optim.SGD(model.parameters(), 
+            lr=params.lr, 
+            momentum=0.9, weight_decay=weight_decay)
+    
+    if lr_gamma>0.0:
+        scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=lr_gamma)
 
     writer = SummaryWriter()
 
@@ -329,7 +347,6 @@ if __name__ == '__main__':
             # forward
             outputs = model(inputs)
             if predict_dist:
-
                 outputs=outputs.squeeze(1)
                 preds = outputs.data
                 loss = nn.functional.mse_loss(outputs, dist)
@@ -365,7 +382,6 @@ if __name__ == '__main__':
                                 log, global_ctr)
             log['ctr']=global_ctr
             log['epoch']=epoch
-
             
             if params.freq is not None and \
                   (global_ctr%params.freq)==0 and \
@@ -430,7 +446,7 @@ if __name__ == '__main__':
             )
             val = val_info['summary']
 
-            if not params.adam:
+            if lr_gamma>0.0:
                 scheduler.step()
             
             if predict_dist:
