@@ -83,39 +83,47 @@ def load_qc_images(imgs):
     return ret
 
 
-def load_minc_images(path):
+def load_minc_images(path,missing_zero=False):
     from minc2_simple import minc2_file 
 
-    input_minc=minc2_file(path)
-    input_minc.setup_standard_order()
+    if os.path.exists(path):
+        input_minc=minc2_file(path)
+        input_minc.setup_standard_order()
 
-    w=input_minc.load_complete_volume_tensor()
-    sz=w.shape
-    w=(w-w.min())/(w.max()-w.min())-0.5
+        w=input_minc.load_complete_volume_tensor()
+        sz=w.shape
+        w=(w-w.min())/(w.max()-w.min())-0.5
 
-    input_images = [w[sz[0]//2, :, :],
-                    w[:, :, sz[2]//2],
-                    w[:, sz[1]//2, :]]
-        
-    # flip, resize and crop
-    for i in range(3):
-        # 
-        _scale = min(256.0/input_images[i].shape[0],
-                     256.0/input_images[i].shape[1])
-        # vertical flip and resize
+        input_images = [w[sz[0]//2, :, :],
+                        w[:, :, sz[2]//2],
+                        w[:, sz[1]//2, :]]
+            
+        # flip, resize and crop
+        for i in range(3):
+            # 
+            _scale = min(256.0/input_images[i].shape[0],
+                        256.0/input_images[i].shape[1])
+            # vertical flip and resize
 
-        new_sz=[ math.floor(input_images[i].shape[0]*_scale),
-                 math.floor(input_images[i].shape[1]*_scale) ]
+            new_sz=[ math.floor(input_images[i].shape[0]*_scale),
+                    math.floor(input_images[i].shape[1]*_scale) ]
 
-        dummy=torch.full([1, 256, 256],-0.5)
+            dummy=torch.full([1, 256, 256],-0.5)
 
-        dummy[:,(256-new_sz[0])//2:(256-new_sz[0])//2+new_sz[0], 
-                (256-new_sz[1])//2:(256-new_sz[1])//2+new_sz[1]] = \
-            F.resize(input_images[i].flip(0).unsqueeze(0),
-                     size=new_sz, antialias=True)
+            dummy[:,(256-new_sz[0])//2:(256-new_sz[0])//2+new_sz[0], 
+                    (256-new_sz[1])//2:(256-new_sz[1])//2+new_sz[1]] = \
+                F.resize(input_images[i].flip(0).unsqueeze(0),
+                        size=new_sz, antialias=True)
 
-        # crop, convert to proper type
-        input_images[i]=dummy[:,16:240, 16:240]# +0.5)*255).clamp(0,255).to(torch.uint8)
+            # crop, convert to proper type
+            input_images[i]=dummy[:,16:240, 16:240]# +0.5)*255).clamp(0,255).to(torch.uint8)
+    else:
+        if missing_zero:
+            input_images = [torch.full([1, 224, 224],-0.5),
+                            torch.full([1, 224, 224],-0.5),
+                            torch.full([1, 224, 224],-0.5)]
+        else:
+            raise NameError(f"File {path} not found")
    
     return input_images
 
@@ -369,9 +377,11 @@ class MincVolumesDataset(Dataset):
         csv_file - name of csv file to load list from (first column)
     """
     def __init__(self, file_list=None, csv_file=None, 
-                    use_ref=False, data_prefix=None):
+                    use_ref=False, data_prefix=None,
+                    missing_zero=False):
         self.use_ref  = use_ref
         self.data_prefix = data_prefix
+        self.missing_zero = missing_zero
 
         if file_list is not None:
             self.file_list = file_list
@@ -394,7 +404,7 @@ class MincVolumesDataset(Dataset):
         return len(self.file_list)
 
     def __getitem__(self, idx):
-        _images = load_minc_images(self.file_list[idx])
+        _images = load_minc_images(self.file_list[idx],missing_zero=self.missing_zero)
 
         if self.use_ref:
             _images = torch.cat( [ item for sublist in zip(_images, self.ref_img) for item in sublist ] )

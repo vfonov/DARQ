@@ -64,6 +64,8 @@ def parse_options():
                         help="Process freesurfer output from recon all, provide subject directory, need mri_convert and nibabel ")
     parser.add_argument('--debug', action="store_true", default=False,
                         help='Print debug messages')
+    parser.add_argument('--missing-zero', action="store_true", default=False,
+                        help='Missing input minc volume will produce low score instead of exception')
 
     params = parser.parse_args()
     
@@ -103,7 +105,7 @@ if __name__ == '__main__':
             if not params.batch_pics :
                 dataset = MincVolumesDataset(csv_file=params.batch,
                     data_prefix=default_data_dir + "/../data",
-                    use_ref=use_ref)
+                    use_ref=use_ref,missing_zero=params.missing_zero)
             else:
                 dataset = QCImagesDataset(csv_file=params.batch,
                             data_prefix=default_data_dir + "/../data",
@@ -168,7 +170,7 @@ if __name__ == '__main__':
                         raise
                     volume=tmp_vol
                 
-                inputs = load_minc_images(volume)
+                inputs = load_minc_images(volume,missing_zero=params.missing_zero)
                 if tmpdir is not None:
                     shutil.rmtree(tmpdir)
             elif params.freesurfer is not None:
