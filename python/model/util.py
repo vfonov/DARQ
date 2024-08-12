@@ -11,7 +11,7 @@ def load_model(model, to_load):
     load a previously trained model.
     """
     #print('Loading the model from {} ...' .format( to_load))
-    model.load_state_dict( torch.load(to_load) )
+    model.load_state_dict( torch.load(to_load, weights_only=True) )
 
 def save_model(model, name, base, fold=0, folds=0, cpu=False):
     """

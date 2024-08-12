@@ -1,14 +1,16 @@
 Bootstrap: docker
-From: ghcr.io/mamba-org/micromamba:1.5.6-focal
+From: ghcr.io/mamba-org/micromamba:1.5.8-focal
 Stage: build
 
 %files
-    env.yaml  /DARQ/env.yaml
+    env-cpu.yaml  /DARQ/env.yaml
     *.py /DARQ/python/
     model/*.py /DARQ/python/model/
     cls/model_r18_ref/best_tnr.pth /DARQ/python/cls/model_r18_ref/best_tnr.pth
     data/*.jpg /DARQ/data/
 
+%environment
+    MAMBA_DOCKERFILE_ACTIVATE=1
 
 %post
     micromamba install -y -n base -f /DARQ/env.yaml && \
@@ -35,4 +37,4 @@ Stage: build
     fi
 
 %runscript
-    python /DARQ/python/aqc_apply.py $@
+    /usr/local/bin/_entrypoint.sh python /DARQ/python/aqc_apply.py $@

@@ -1,0 +1,40 @@
+Bootstrap: docker
+From: ghcr.io/mamba-org/micromamba:1.5.8-focal
+Stage: build
+
+%files
+    env-gpu.yaml  /DARQ/env.yaml
+    *.py /DARQ/python/
+    model/*.py /DARQ/python/model/
+    cls/model_r18_ref/best_tnr.pth /DARQ/python/cls/model_r18_ref/best_tnr.pth
+    data/*.jpg /DARQ/data/
+
+%environment
+    MAMBA_DOCKERFILE_ACTIVATE=1
+
+%post
+    micromamba install -y -n base -f /DARQ/env.yaml && \
+    micromamba clean --all --yes
+    echo 'export PATH=/opt/conda/bin:$PATH' >> $APPTAINER_ENVIRONMENT
+
+
+%labels
+    Author vladimir.fonov@gmail.com
+    Version v0.0.1
+
+
+
+%test
+    #!/bin/bash
+    
+    res=`python /DARQ/python/aqc_apply.py --ref --image /DARQ/data/mni_icbm152_t1_tal_nlin_sym_09c`
+    if [ "$res"=="Pass" ];then
+        echo "Test passed"
+    else
+        echo "Test failed!"
+        echo "Result: $res"
+        exit 1
+    fi
+
+%runscript
+    /usr/local/bin/_entrypoint.sh python /DARQ/python/aqc_apply.py $@

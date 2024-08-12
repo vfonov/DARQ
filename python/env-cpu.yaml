@@ -5,7 +5,7 @@ channels:
   - minc-forge
 dependencies:
   - minc2-simple-sa
-  - pytorch=2.0.1
+  - pytorch=2.4
   - torchvision 
   - torchaudio 
   - cpuonly

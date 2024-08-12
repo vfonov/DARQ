@@ -98,7 +98,6 @@ if __name__ == '__main__':
     if params.gpu:
         model=model.cuda()
 
-
     with torch.no_grad():
         if params.batch is not None:
             if not params.batch_pics :
@@ -213,7 +212,9 @@ if __name__ == '__main__':
               # with a single batch dimension
               inputs = torch.cat( inputs ).unsqueeze_(0)
 
+            if params.gpu: inputs = inputs.cuda()
             outputs = model(inputs)
+            if params.gpu: outputs = outputs.cpu()
 
             if params.dist:
                 outputs = outputs[0,0]

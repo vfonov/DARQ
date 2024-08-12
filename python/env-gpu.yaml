@@ -1,0 +1,12 @@
+name: base
+channels:
+  - pytorch
+  - conda-forge
+  - minc-forge
+  - nvidia
+dependencies:
+  - minc2-simple-sa
+  - pytorch-cuda=11.8
+  - pytorch=2.4
+  - torchvision 
+  - torchaudio 
