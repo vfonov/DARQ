@@ -3,16 +3,15 @@ import torch.nn as nn
 import torch.nn.functional as nnf
 import math
 
-
-from data.geo  import *
-from data.misc import *
-from data.voxel_morph import *
+from geo  import *
+from misc import *
+from voxel_morph import *
 
 class AugNu(nn.Module):
     """
     Apply random non-uniformity field
     """
-    def __init__(self, sample_size, nu_params=None, dtype=torch.float32,device='cpu'):
+    def __init__(self, sample_size, nu_params=None, dtype=torch.float32, device='cpu'):
         super(AugNu, self).__init__()
         self.sample_size = sample_size
         self.dtype = dtype
@@ -46,6 +45,7 @@ class AugNu(nn.Module):
             ran_nu_channels=self.random_nu.get('channels',1)
             ran_nu_mag=self.random_nu.get('mag',0.0)
             ran_nu_step=self.random_nu.get('step',20)
+            
             if ran_nu_mag>0.0:
                 with torch.no_grad():
                     # create random non-uniformity field

@@ -12,6 +12,7 @@ import copy
 import json
 
 from aqc_data   import *
+from aqc_augment import create_augment_model
 from model.util import *
 
 import torch
@@ -21,7 +22,11 @@ from torch import optim
 from torch.utils.tensorboard import SummaryWriter
 
 
-def run_validation_testing_loop(dataloader, model, loss_fn=nn.functional.cross_entropy, details=False,predict_dist=False ):
+def run_validation_testing_loop(dataloader, 
+            model, 
+            loss_fn=nn.functional.cross_entropy, 
+            details=False,
+            predict_dist=False ):
     """
     Run Validation/Testing loop
     return validation_dict, validation_log
@@ -34,7 +39,7 @@ def run_validation_testing_loop(dataloader, model, loss_fn=nn.functional.cross_e
     _scores = np.zeros(0)
     _dist   = np.zeros(0)
 
-    val_loss  = 0.0
+    val_loss = 0.0
     from sklearn.metrics import accuracy_score
     from sklearn.metrics import precision_recall_fscore_support
     from sklearn.metrics import roc_auc_score
@@ -64,7 +69,6 @@ def run_validation_testing_loop(dataloader, model, loss_fn=nn.functional.cross_e
             _labels=np.concatenate((_labels,labels.cpu().numpy()))
             val_loss += float(loss) * inputs.size(0)
             ids.extend(v_sample_batched['id'])
-
 
         # (?)
         val_loss /= len(ids)
@@ -196,6 +200,10 @@ def parse_options():
 
 if __name__ == '__main__':
     params = parse_options()
+
+
+    aug_params=dict()
+
     data_prefix = params.data
     db_name = params.db
     params.ref = params.ref
@@ -210,23 +218,15 @@ if __name__ == '__main__':
     lr_gamma = params.lr_gamma
 
     all_samples_main = load_full_db(data_prefix + os.sep + db_name,
-                   data_prefix, True, table="qc_all")
-
-    # if distance training is required
-    all_samples_aug = load_full_db(data_prefix + os.sep + db_name,
-                   data_prefix, True, table="qc_all_aug",
-                   use_variant_dist=params.dist,
-                    png=params.png )
+                   data_prefix, True, table="qc_npy")
 
     print("Main samples: {}".format(len(all_samples_main)))
-    print("Aug  samples: {}".format(len(all_samples_aug)))
 
     training, validation, testing = split_dataset(
         all_samples_main, fold=params.fold,
         folds=params.folds,
         validation=params.validation,
-        shuffle=True, seed=params.seed,
-        sec_samples=all_samples_aug )
+        shuffle=True, seed=params.seed )
 
     train_dataset    = QCDataset(training, data_prefix,   use_ref=params.ref)
     validate_dataset = QCDataset(validation, data_prefix, use_ref=params.ref)
@@ -254,15 +254,17 @@ if __name__ == '__main__':
                           drop_last=False)
 
     model = get_qc_model(params, use_ref=params.ref,
-                        pretrained=params.pretrained,
-                        predict_dist=predict_dist)
+                        pretrained=params.pretrained)
+
+    augment_model = create_augment_model(params, train_dataset)
 
     model = model.cuda()
     #criterion = nn.CrossEntropyLoss()
     if params.adam:
         # parameters from LUA version
         optimizer = optim.Adam(model.parameters(),
-           lr=init_lr, betas=(0.9, 0.999), eps=1e-08, weight_decay=weight_decay)
+           lr=init_lr, betas=(0.9, 0.999), 
+           eps=1e-08, weight_decay=weight_decay)
     elif params.adamw:
         optimizer = optim.AdamW(model.parameters(),
            lr=init_lr, weight_decay=weight_decay)
@@ -325,21 +327,20 @@ if __name__ == '__main__':
                     for g in optimizer.param_groups :
                         g[ 'lr' ] = init_lr
 
-            inputs = sample_batched['image'].cuda()
+            inputs = sample_batched['volume'].cuda()
             if predict_dist:
                 dist = sample_batched['dist'].float().cuda()
             else:
                 labels = sample_batched['status'].cuda()
 
-            # augment data: add random shift and multipy  by random factor
-            if augment>0.0:
-                bs = inputs.size(0)
-                with torch.no_grad():
-                    # random shift and multipy  by random factor
-                    ran_mul = torch.rand(bs,1,1,1,device='cuda') * augment + 1.0
-                    ran_shift = torch.rand(bs,1,1,1,device='cuda') * augment
-                # apply augmentation
-                inputs = inputs * ran_mul + ran_shift
+            # augment data
+            # do not try to propagate gradients
+            with torch.no_grad():
+                inputs = augment_model(inputs, aug_params)
+
+                writer.add_image('{}/validation'.format(params.output),
+                                    inputs[0,0,:,:],
+                                    global_ctr)
 
             # zero the parameter gradients
             optimizer.zero_grad()

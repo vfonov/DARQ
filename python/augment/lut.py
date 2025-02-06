@@ -4,11 +4,6 @@ import torch.nn.functional as nnf
 import math
 
 
-from data.geo  import *
-from data.misc import *
-from data.voxel_morph import *
-
-
 def interp1d_pytorch_batched(x, y, x_new):
     """
     Linearly interpolate data points in PyTorch with support for batched x_new.
@@ -48,39 +43,31 @@ class AugLUT(nn.Module):
     """
     Apply random Look-Up-Table (LUT) to the input, all inputs assumed to be in [0,1]
     """
-    def __init__(self, lut_params=None, clone_input=False):
+    def __init__(self, n_bins=20, strength=1.0):
         super(AugLUT, self).__init__()
-        self.use_random_lut(lut_params)
+        self.n_bins = n_bins
+        self.strength = strength
 
-
-    def use_random_lut(self, lut_params):
-        self.random_lut = lut_params
 
     @torch.autocast(device_type="cuda")
     def forward(self,x):
         mri    = x
         sz     = mri.shape
         bs     = sz[0]
-        
-        if self.random_lut is not None:
-            n_bins = self.random_lut.get('n_bins',20)
-            strength = self.random_lut.get('strength',1.0)
 
-            with torch.no_grad():
+        with torch.no_grad():
 
-                ran_x = torch.linspace(0,1,n_bins,device=mri.device, dtype=mri.dtype).unsqueeze(0).expand(bs,n_bins)
+            ran_x = torch.linspace(0,1,self.n_bins,device=mri.device, dtype=mri.dtype).unsqueeze(0).expand(bs,self.n_bins)
 
-                ran_y = torch.rand((bs,n_bins),   device=mri.device, dtype=mri.dtype)
-                lin_y = torch.linspace(0,1,n_bins,device=mri.device, dtype=mri.dtype).unsqueeze(0).expand(bs,n_bins)
+            ran_y = torch.rand((bs,self.n_bins),   device=mri.device, dtype=mri.dtype)
+            lin_y = torch.linspace(0,1,self.n_bins,device=mri.device, dtype=mri.dtype).unsqueeze(0).expand(bs,self.n_bins)
 
-                y = ran_y*strength + lin_y * (1.0-strength)
+            y = ran_y*self.strength + lin_y * (1.0-self.strength)
 
-                # normalize y to [0,1]
-                y = (y-y.amin(dim=1,keepdim=True))/(y.amax(dim=1,keepdim=True)-y.amin(dim=1,keepdim=True) + 1e-5)
+            # normalize y to [0,1]
+            y = (y-y.amin(dim=1,keepdim=True))/(y.amax(dim=1,keepdim=True)-y.amin(dim=1,keepdim=True) + 1e-5)
 
-                # apply random lut
-                _out = interp1d_pytorch_batched(ran_x, y, mri.reshape(bs,-1)).reshape(mri.shape)
-            
+            # apply random lut
+            _out = interp1d_pytorch_batched(ran_x, y, mri.reshape(bs,-1)).reshape(mri.shape)
         
         return _out
-            

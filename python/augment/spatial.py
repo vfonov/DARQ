@@ -3,11 +3,9 @@ import torch.nn as nn
 import torch.nn.functional as nnf
 import math
 
-
-from data.geo  import *
-from data.misc import *
-from data.voxel_morph import *
-
+from geo  import *
+from misc import *
+from voxel_morph import *
 
 from torch.amp import autocast
 

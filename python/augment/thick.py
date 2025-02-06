@@ -49,13 +49,6 @@ class AugThickSlices(nn.Module):
 
                     self.smooth[i][-1].to(self.device)
             
-            ### DEBUG ###
-            if False:
-                print("Thikness kernels:")
-                for i in range(3):
-                    print(f"{i=} {self.thickness[i]=}")
-                    for j in range(2,self.thickness[i]+1):
-                        print(j,self.smooth[i][j-2].weight.shape)
         else:
             self.smooth = None
 
