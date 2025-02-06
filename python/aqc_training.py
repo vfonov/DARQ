@@ -22,11 +22,16 @@ from torch import optim
 from torch.utils.tensorboard import SummaryWriter
 
 
+from torch.amp import GradScaler
+
+
+
 def run_validation_testing_loop(dataloader, 
             model, 
             loss_fn=nn.functional.cross_entropy, 
             details=False,
-            predict_dist=False ):
+            predict_dist=False,
+            preprocess_model=None ):
     """
     Run Validation/Testing loop
     return validation_dict, validation_log
@@ -46,10 +51,13 @@ def run_validation_testing_loop(dataloader,
 
     with torch.no_grad():
         for v_batch, v_sample_batched in enumerate(dataloader):
-            inputs = v_sample_batched['image' ].cuda()
+            inputs = v_sample_batched['volume' ].cuda()
             labels = v_sample_batched['status'].cuda()
 
-            outputs=model(inputs)
+            with torch.amp.autocast('cuda'):
+                outputs=model(preprocess_model(inputs))
+
+
             if predict_dist:
                 dist = v_sample_batched['dist'].float().cuda()
                 outputs=outputs.squeeze(1)
@@ -181,7 +189,7 @@ def parse_options():
                         help="Number of unique subjects used for validation")
     parser.add_argument("--freq", type=int, default=None,
                         help="Perform frequent validations, every N minibatches (for debugging)")
-    parser.add_argument("--clip", type=float, default=0.0,
+    parser.add_argument("--clip", type=float, default=2.0,
                         help="Apply gradient clipping")
     parser.add_argument("--l2", type=float, default=0.0,
                         help="Apply l2 regularization")
@@ -201,9 +209,6 @@ def parse_options():
 if __name__ == '__main__':
     params = parse_options()
 
-
-    aug_params=dict()
-
     data_prefix = params.data
     db_name = params.db
     params.ref = params.ref
@@ -217,8 +222,8 @@ if __name__ == '__main__':
     predict_dist = params.dist
     lr_gamma = params.lr_gamma
 
-    all_samples_main = load_full_db(data_prefix + os.sep + db_name,
-                   data_prefix, True, table="qc_npy")
+    all_samples_main = load_full_db(db_name,
+                   data_prefix, table="qc_npy")
 
     print("Main samples: {}".format(len(all_samples_main)))
 
@@ -228,9 +233,9 @@ if __name__ == '__main__':
         validation=params.validation,
         shuffle=True, seed=params.seed )
 
-    train_dataset    = QCDataset(training, data_prefix,   use_ref=params.ref)
-    validate_dataset = QCDataset(validation, data_prefix, use_ref=params.ref)
-    testing_dataset  = QCDataset(testing, data_prefix,    use_ref=params.ref)
+    train_dataset    = QCDataset(training, data_prefix,   )
+    validate_dataset = QCDataset(validation, data_prefix, )
+    testing_dataset  = QCDataset(testing, data_prefix,    )
 
     if params.balance:
         validate_dataset.balance()
@@ -256,7 +261,9 @@ if __name__ == '__main__':
     model = get_qc_model(params, use_ref=params.ref,
                         pretrained=params.pretrained)
 
-    augment_model = create_augment_model(params, train_dataset)
+    aug_params=dict(patch_size=224)
+    augment_model = create_augment_model(aug_params, train_dataset)
+    augment_model_testing = create_augment_model(aug_params, validate_dataset,testing=True)
 
     model = model.cuda()
     #criterion = nn.CrossEntropyLoss()
@@ -313,6 +320,11 @@ if __name__ == '__main__':
     # DEBUG
     # torch.autograd.set_detect_anomaly(True)
     # DEBUG
+    use_amp=True
+
+    scaler = torch.GradScaler(enabled=use_amp,
+                   init_scale= 8192.0)
+
     for epoch in range(params.n_epochs):
         print('Epoch {}/{}'.format(epoch+1, params.n_epochs))
         print('-' * 10)
@@ -336,17 +348,19 @@ if __name__ == '__main__':
             # augment data
             # do not try to propagate gradients
             with torch.no_grad():
-                inputs = augment_model(inputs, aug_params)
-
-                writer.add_image('{}/validation'.format(params.output),
-                                    inputs[0,0,:,:],
-                                    global_ctr)
+                inputs = augment_model(inputs)
+                if global_ctr % 10 == 0:
+                    writer.add_image('{}/validation'.format(params.output),
+                                        inputs[0,0,:,:],
+                                        global_ctr,dataformats='HW')
 
             # zero the parameter gradients
             optimizer.zero_grad()
 
             # forward
-            outputs = model(inputs)
+            with torch.amp.autocast('cuda'):
+                outputs = model(inputs)
+
             if predict_dist:
                 outputs=outputs.squeeze(1)
                 preds = outputs.data
@@ -361,14 +375,17 @@ if __name__ == '__main__':
                 loss = loss + l2_norm * regularize_l2
 
             # if training
-            loss.backward()
+            #loss.backward()
+            scaler.scale(loss).backward()
 
             if grad_norm > 0.0:
-                grad_log = clip_grad_norm(model.parameters(), grad_norm)
+                grad_log = torch.nn.utils.clip_grad_norm_(model.parameters(), grad_norm)
             else:
                 grad_log = get_model_grad_norm(model.parameters())
 
-            optimizer.step()
+            scaler.unscale_(optimizer)
+            scaler.step( optimizer )
+            scaler.update()
 
             batch_loss = loss.data.item()
 
@@ -378,6 +395,11 @@ if __name__ == '__main__':
             if not predict_dist:
                 batch_acc  = torch.sum(preds == labels.data).item()
                 log['acc'] = batch_acc/inputs.size(0)
+            
+            if global_ctr % 10 == 0:
+                print('Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
+                    epoch, i_batch * len(inputs), len(training_dataloader.dataset),
+                    100. * i_batch / len(training_dataloader), batch_loss))
             # training stats
             writer.add_scalars('{}/training'.format(params.output),
                                 log, global_ctr)
@@ -391,7 +413,7 @@ if __name__ == '__main__':
                 val_info = run_validation_testing_loop(validation_dataloader, model, 
                     loss_fn = nn.functional.mse_loss if predict_dist else nn.functional.cross_entropy,
                     predict_dist=predict_dist,
-                    details=False)
+                    details=False, preprocess_model=augment_model_testing)
 
                 val = val_info['summary']
                 
@@ -443,7 +465,7 @@ if __name__ == '__main__':
         if len(validation)>0:
             val_info = run_validation_testing_loop(validation_dataloader,model,details=False,
                     loss_fn = nn.functional.mse_loss if predict_dist else nn.functional.cross_entropy,
-                    predict_dist=predict_dist,
+                    predict_dist=predict_dist,augment_model=augment_model_testing
             )
             val = val_info['summary']
 
@@ -540,26 +562,26 @@ if __name__ == '__main__':
             model.load_state_dict(final_model)
             testing_final = run_validation_testing_loop(testing_dataloader, model, details=True,
                         loss_fn = nn.functional.mse_loss if predict_dist else nn.functional.cross_entropy,
-                        predict_dist=predict_dist)
+                        predict_dist=predict_dist,augment_model=augment_model_testing)
 
             if len(validation)>0:
                 if predict_dist:
                     model.load_state_dict(best_model_loss)
                     testing_best_loss = run_validation_testing_loop(testing_dataloader, model, details=True,
                         loss_fn = nn.functional.mse_loss,
-                        predict_dist=predict_dist)
+                        predict_dist=predict_dist,augment_model=augment_model_testing)
                 else:
                     model.load_state_dict(best_model_acc)
-                    testing_best_acc = run_validation_testing_loop(testing_dataloader, model, details=True)
+                    testing_best_acc = run_validation_testing_loop(testing_dataloader, model, details=True,augment_model=augment_model_testing)
 
                     model.load_state_dict(best_model_auc)
-                    testing_best_auc = run_validation_testing_loop(testing_dataloader, model, details=True)
+                    testing_best_auc = run_validation_testing_loop(testing_dataloader, model, details=True,augment_model=augment_model_testing)
 
                     model.load_state_dict(best_model_tpr)
-                    testing_best_tpr = run_validation_testing_loop(testing_dataloader, model, details=True)
+                    testing_best_tpr = run_validation_testing_loop(testing_dataloader, model, details=True,augment_model=augment_model_testing)
 
                     model.load_state_dict(best_model_tnr)
-                    testing_best_tnr = run_validation_testing_loop(testing_dataloader, model, details=True)
+                    testing_best_tnr = run_validation_testing_loop(testing_dataloader, model, details=True,augment_model=augment_model_testing)
 
 
     if not os.path.exists(params.output):

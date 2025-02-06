@@ -4,9 +4,9 @@ import torch.nn.functional as nnf
 import math
 
 
-from geo  import *
-from misc import *
-from voxel_morph import *
+from .geo  import *
+from .misc import *
+from .voxel_morph import *
 
 from torch.amp import autocast
 
@@ -18,17 +18,18 @@ class AugNoise(nn.Module):
                  mult_noise=0.0, 
                  bias_noise=0.0,
                  add_noise=0.0,
+                 corrupt_noise=0.0
             ):
         super(AugNoise, self).__init__()
         self.set_parameters(mult_noise,bias_noise,add_noise)
         
     def set_parameters(self,mult_noise=0.0,
                         bias_noise=0.0,add_noise=0.0,
-                        corrupt_noise=0.0,channel_drop=0.0,
-                        clone_input=False ):
+                        corrupt_noise=0.0 ):
         self.mult_noise = mult_noise
         self.bias_noise = bias_noise
         self.add_noise = add_noise
+        self.corrupt_noise = corrupt_noise
     
     @torch.autocast(device_type="cuda")
     def forward(self,x):

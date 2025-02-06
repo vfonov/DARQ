@@ -4,9 +4,9 @@ import torch.nn.functional as nnf
 import math
 
 
-from geo  import *
-from misc import *
-from voxel_morph import *
+from .geo  import *
+from .misc import *
+from .voxel_morph import *
 
 
 class AugBlur(nn.Module):

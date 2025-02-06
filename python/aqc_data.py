@@ -29,7 +29,7 @@ QC_entry = collections.namedtuple(
 
 def load_full_db(qc_db_path, 
                 data_prefix, 
-                table="qc_npy", 
+                table="qc_npy"
                 ):
     """Load complete QC database into memory
     """
@@ -46,14 +46,18 @@ def load_full_db(qc_db_path,
 
             vol=os.path.join(data_prefix,vol)
 
-            if _pass == 'TRUE': status=1 
-            else: status=0 
+            if _pass == 'TRUE': 
+                status=1 
+            else: 
+                status=0 
 
             _id='{}:{}:{}:{}:{}'.format(variant, cohort, subject, visit,N)
             dist=-1
             if os.path.exists(vol):
                 samples.append( QC_entry( _id, status, vol, variant, cohort, subject, visit, float(dist) ))
-        
+            else:
+                print('Warning: file {} does not exist'.format(vol))
+
         return samples
 
 
@@ -141,18 +145,23 @@ class QCDataset(Dataset):
     QC images dataset. Uses sqlite3 database to load data
     """
 
-    def __init__(self, dataset, data_prefix, use_ref=False):
+    def __init__(self, dataset, data_prefix):
         """
         Args:
             root_dir (string): Directory with all the data
             use_ref  (Boolean): use reference images
         """
         super(QCDataset, self).__init__()
-        self.use_ref  = use_ref
+
         self.qc_samples = dataset
         self.data_prefix = data_prefix
-        #
         self.qc_subjects = set(i.subject for i in self.qc_samples)
+        ### check sample size
+        if len(self.qc_samples)>0:
+            _vol = load_volume( self.qc_samples[0].vol )
+            self.sample_size = _vol.shape
+        else:
+            self.sample_size = None
 
 
     def __len__(self):
@@ -163,7 +172,7 @@ class QCDataset(Dataset):
         # load images 
 
         # TODO: finish this 
-        _vol = load_volume( _s.vol )
+        _vol = load_volume( _s.vol )[None,:,:,:]
 
         return {'volume':_vol, 'status': _s.status, 'id':_s.id, 'dist': _s.dist }
 
