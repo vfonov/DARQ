@@ -465,7 +465,7 @@ if __name__ == '__main__':
         if len(validation)>0:
             val_info = run_validation_testing_loop(validation_dataloader,model,details=False,
                     loss_fn = nn.functional.mse_loss if predict_dist else nn.functional.cross_entropy,
-                    predict_dist=predict_dist,augment_model=augment_model_testing
+                    predict_dist=predict_dist,preprocess_model=augment_model_testing
             )
             val = val_info['summary']
 
@@ -569,19 +569,23 @@ if __name__ == '__main__':
                     model.load_state_dict(best_model_loss)
                     testing_best_loss = run_validation_testing_loop(testing_dataloader, model, details=True,
                         loss_fn = nn.functional.mse_loss,
-                        predict_dist=predict_dist,augment_model=augment_model_testing)
+                        predict_dist=predict_dist,preprocess_model=augment_model_testing)
                 else:
                     model.load_state_dict(best_model_acc)
-                    testing_best_acc = run_validation_testing_loop(testing_dataloader, model, details=True,augment_model=augment_model_testing)
+                    testing_best_acc = run_validation_testing_loop(testing_dataloader, model, details=True,
+                        preprocess_model=augment_model_testing)
 
                     model.load_state_dict(best_model_auc)
-                    testing_best_auc = run_validation_testing_loop(testing_dataloader, model, details=True,augment_model=augment_model_testing)
+                    testing_best_auc = run_validation_testing_loop(testing_dataloader, model, details=True,
+                        preprocess_model=augment_model_testing)
 
                     model.load_state_dict(best_model_tpr)
-                    testing_best_tpr = run_validation_testing_loop(testing_dataloader, model, details=True,augment_model=augment_model_testing)
+                    testing_best_tpr = run_validation_testing_loop(testing_dataloader, model, details=True,
+                        preprocess_model=augment_model_testing)
 
                     model.load_state_dict(best_model_tnr)
-                    testing_best_tnr = run_validation_testing_loop(testing_dataloader, model, details=True,augment_model=augment_model_testing)
+                    testing_best_tnr = run_validation_testing_loop(testing_dataloader, model, details=True,
+                        preprocess_model=augment_model_testing)
 
 
     if not os.path.exists(params.output):
