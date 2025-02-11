@@ -1,6 +1,6 @@
 # DEEP QC
 
-Code for the paper Vladimir S. Fonov, Mahsa Dadar, The PREVENT-AD Research Group, D. Louis Collins **"DARQ: Deep learning of quality control for stereotaxic registration of human brain MRI"**.
+Code for the paper Vladimir S. Fonov, Mahsa Dadar, The PREVENT-AD Research Group, D. Louis Collins **"DARQ: Deep learning of quality control for stereotaxic registration of human brain MRI"** https://doi.org/10.1016/j.neuroimage.2022.119266
 
 *Updated version of the previosly available ["Deep learning of quality control for stereotaxic registration of human brain MRI"](https://doi.org/10.1101/303487)*
 
