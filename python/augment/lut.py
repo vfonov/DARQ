@@ -51,23 +51,26 @@ class AugLUT(nn.Module):
 
     @torch.autocast(device_type="cuda")
     def forward(self,x):
-        mri    = x
-        sz     = mri.shape
-        bs     = sz[0]
+        if self.strength > 0.0:
+            mri    = x
+            sz     = mri.shape
+            bs     = sz[0]
 
-        with torch.no_grad():
+            with torch.no_grad():
 
-            ran_x = torch.linspace(0,1,self.n_bins,device=mri.device, dtype=mri.dtype).unsqueeze(0).expand(bs,self.n_bins)
+                ran_x = torch.linspace(0,1,self.n_bins,device=mri.device, dtype=mri.dtype).unsqueeze(0).expand(bs,self.n_bins)
 
-            ran_y = torch.rand((bs,self.n_bins),   device=mri.device, dtype=mri.dtype)
-            lin_y = torch.linspace(0,1,self.n_bins,device=mri.device, dtype=mri.dtype).unsqueeze(0).expand(bs,self.n_bins)
+                ran_y = torch.rand((bs,self.n_bins),   device=mri.device, dtype=mri.dtype)
+                lin_y = torch.linspace(0,1,self.n_bins,device=mri.device, dtype=mri.dtype).unsqueeze(0).expand(bs,self.n_bins)
 
-            y = ran_y*self.strength + lin_y * (1.0-self.strength)
+                y = ran_y*self.strength + lin_y * (1.0-self.strength)
 
-            # normalize y to [0,1]
-            y = (y-y.amin(dim=1,keepdim=True))/(y.amax(dim=1,keepdim=True)-y.amin(dim=1,keepdim=True) + 1e-5)
+                # normalize y to [0,1]
+                y = (y-y.amin(dim=1,keepdim=True))/(y.amax(dim=1,keepdim=True)-y.amin(dim=1,keepdim=True) + 1e-5)
 
-            # apply random lut
-            _out = interp1d_pytorch_batched(ran_x, y, mri.reshape(bs,-1)).reshape(mri.shape)
-        
-        return _out
+                # apply random lut
+                _out = interp1d_pytorch_batched(ran_x, y, mri.reshape(bs,-1)).reshape(mri.shape)
+            
+            return _out
+        else: # bypass
+            return x 

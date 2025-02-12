@@ -24,6 +24,9 @@ from torch.utils.tensorboard import SummaryWriter
 
 from torch.amp import GradScaler
 
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import precision_recall_fscore_support
+from sklearn.metrics import roc_auc_score
 
 
 def run_validation_testing_loop(dataloader, 
@@ -31,7 +34,8 @@ def run_validation_testing_loop(dataloader,
             loss_fn=nn.functional.cross_entropy, 
             details=False,
             predict_dist=False,
-            preprocess_model=None ):
+            preprocess_model=None,
+            writer=None):
     """
     Run Validation/Testing loop
     return validation_dict, validation_log
@@ -45,18 +49,29 @@ def run_validation_testing_loop(dataloader,
     _dist   = np.zeros(0)
 
     val_loss = 0.0
-    from sklearn.metrics import accuracy_score
-    from sklearn.metrics import precision_recall_fscore_support
-    from sklearn.metrics import roc_auc_score
 
     with torch.no_grad():
         for v_batch, v_sample_batched in enumerate(dataloader):
-            inputs = v_sample_batched['volume' ].cuda()
+            inputs = v_sample_batched['volume'].cuda()
             labels = v_sample_batched['status'].cuda()
 
             with torch.amp.autocast('cuda'):
-                outputs=model(preprocess_model(inputs))
+                inputs = augment_model(inputs)
+                outputs=model(inputs)
+                #print(f"V: {inputs.shape=} {outputs.shape=}")
 
+            if writer is not None:
+                writer.add_image('{}/validation'.format(params.output),
+                                torch.cat([inputs[0,0,:,:],inputs[0,1,:,:],inputs[0,2,:,:]],1),
+                                global_ctr,dataformats='HW')
+
+            if outputs.isnan().any():
+                print("NaN detected in output")
+                nans=torch.max(outputs.isnan(),1)[0]
+                for i in range(nans.size(0)):
+                    if nans[i]:
+                        print(v_sample_batched['id'][i])
+                outputs=torch.nan_to_num(outputs,posinf=1.0,neginf=0.0,nan=0.0)
 
             if predict_dist:
                 dist = v_sample_batched['dist'].float().cuda()
@@ -134,7 +149,7 @@ def parse_options():
     parser = argparse.ArgumentParser(description='Train automated QC',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-    parser.add_argument("--n_epochs", type=int, default=10,
+    parser.add_argument("--n_epochs", type=int, default=20,
                         help="Total number of epochs")
     parser.add_argument("--batch_size", type=int, default=8,
                         help="Batch size")
@@ -201,6 +216,13 @@ def parse_options():
                         help="Predict misregistration distance instead of class membership")
     parser.add_argument("--png",action="store_true",default=False,
                         help="PNG file format for training data")
+    parser.add_argument("--slices",action="store_true",default=False,
+                        help="Data is stored as slices")
+    # augmentation parameters
+    parser.add_argument("--noise",type=float, default=0.2,
+                        help="Additive noise")
+    parser.add_argument("--lut",type=float, default=0.2,
+                        help="Lut strength")
 
     params = parser.parse_args()
     
@@ -261,7 +283,7 @@ if __name__ == '__main__':
     model = get_qc_model(params, use_ref=params.ref,
                         pretrained=params.pretrained)
 
-    aug_params=dict(patch_size=224)
+    aug_params=dict(patch_size=224,slices=params.slices,noise=params.noise,lut=params.lut)
     augment_model = create_augment_model(aug_params, train_dataset)
     augment_model_testing = create_augment_model(aug_params, validate_dataset,testing=True)
 
@@ -325,6 +347,14 @@ if __name__ == '__main__':
     scaler = torch.GradScaler(enabled=use_amp,
                    init_scale= 8192.0)
 
+    #### DEBUG
+    val_info = run_validation_testing_loop(validation_dataloader, model, 
+                        loss_fn = nn.functional.mse_loss if predict_dist else nn.functional.cross_entropy,
+                        predict_dist=predict_dist,
+                        details=False, preprocess_model=augment_model_testing)
+    ####
+
+
     for epoch in range(params.n_epochs):
         print('Epoch {}/{}'.format(epoch+1, params.n_epochs))
         print('-' * 10)
@@ -350,9 +380,9 @@ if __name__ == '__main__':
             with torch.no_grad():
                 inputs = augment_model(inputs)
                 if global_ctr % 10 == 0:
-                    writer.add_image('{}/validation'.format(params.output),
-                                        inputs[0,0,:,:],
-                                        global_ctr,dataformats='HW')
+                    writer.add_image('{}/training'.format(params.output),
+                                torch.cat([inputs[0,0,:,:],inputs[0,1,:,:],inputs[0,2,:,:]],1),
+                                global_ctr,dataformats='HW')
 
             # zero the parameter gradients
             optimizer.zero_grad()
@@ -465,8 +495,10 @@ if __name__ == '__main__':
         if len(validation)>0:
             val_info = run_validation_testing_loop(validation_dataloader,model,details=False,
                     loss_fn = nn.functional.mse_loss if predict_dist else nn.functional.cross_entropy,
-                    predict_dist=predict_dist,preprocess_model=augment_model_testing
-            )
+                    predict_dist=predict_dist,
+                    preprocess_model=augment_model_testing,
+                    writer=writer)
+
             val = val_info['summary']
 
             if lr_gamma>0.0:
@@ -562,14 +594,16 @@ if __name__ == '__main__':
             model.load_state_dict(final_model)
             testing_final = run_validation_testing_loop(testing_dataloader, model, details=True,
                         loss_fn = nn.functional.mse_loss if predict_dist else nn.functional.cross_entropy,
-                        predict_dist=predict_dist,augment_model=augment_model_testing)
+                        predict_dist=predict_dist,
+                        preprocess_model=augment_model_testing)
 
             if len(validation)>0:
                 if predict_dist:
                     model.load_state_dict(best_model_loss)
                     testing_best_loss = run_validation_testing_loop(testing_dataloader, model, details=True,
                         loss_fn = nn.functional.mse_loss,
-                        predict_dist=predict_dist,preprocess_model=augment_model_testing)
+                        predict_dist=predict_dist,
+                        preprocess_model=augment_model_testing)
                 else:
                     model.load_state_dict(best_model_acc)
                     testing_best_acc = run_validation_testing_loop(testing_dataloader, model, details=True,

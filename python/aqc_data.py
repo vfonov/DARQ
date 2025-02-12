@@ -172,7 +172,7 @@ class QCDataset(Dataset):
         # load images 
 
         # TODO: finish this 
-        _vol = load_volume( _s.vol )[None,:,:,:]
+        _vol = np.nan_to_num(load_volume( _s.vol )[None,:,:,:],nan=0.0,posinf=1.0,neginf=0.0,copy=False)
 
         return {'volume':_vol, 'status': _s.status, 'id':_s.id, 'dist': _s.dist }
 
