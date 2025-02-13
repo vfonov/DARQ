@@ -10,6 +10,7 @@ import numpy as np
 import io
 import copy
 import json
+import time
 
 from aqc_data   import *
 from aqc_augment import create_augment_model
@@ -56,14 +57,14 @@ def run_validation_testing_loop(dataloader,
             labels = v_sample_batched['status'].cuda()
 
             with torch.amp.autocast('cuda'):
-                inputs = augment_model(inputs)
+                inputs = preprocess_model(inputs)
                 outputs=model(inputs)
-                #print(f"V: {inputs.shape=} {outputs.shape=}")
 
-            if writer is not None:
-                writer.add_image('{}/validation'.format(params.output),
-                                torch.cat([inputs[0,0,:,:],inputs[0,1,:,:],inputs[0,2,:,:]],1),
-                                global_ctr,dataformats='HW')
+            # DEBUG: visualize image
+            #if writer is not None:
+            #    writer.add_image('{}/validation'.format(params.output),
+            #                    torch.cat([inputs[0,0,:,:],inputs[0,1,:,:],inputs[0,2,:,:]],1),
+            #                    global_ctr,dataformats='HW')
 
             if outputs.isnan().any():
                 print("NaN detected in output")
@@ -214,8 +215,6 @@ def parse_options():
                         help="Balance validation and testing sample")
     parser.add_argument("--dist",action="store_true",default=False,
                         help="Predict misregistration distance instead of class membership")
-    parser.add_argument("--png",action="store_true",default=False,
-                        help="PNG file format for training data")
     parser.add_argument("--slices",action="store_true",default=False,
                         help="Data is stored as slices")
     # augmentation parameters
@@ -223,6 +222,12 @@ def parse_options():
                         help="Additive noise")
     parser.add_argument("--lut",type=float, default=0.2,
                         help="Lut strength")
+    parser.add_argument("--nu",type=float, default=0.2,
+                        help="Nonuniformity strength")
+    parser.add_argument("--nl",type=float, default=0.1,
+                        help="Nonlinar transform strength")
+    parser.add_argument("--th",type=int, default=1,
+                        help="maximum thickness")
 
     params = parser.parse_args()
     
@@ -283,9 +288,17 @@ if __name__ == '__main__':
     model = get_qc_model(params, use_ref=params.ref,
                         pretrained=params.pretrained)
 
-    aug_params=dict(patch_size=224,slices=params.slices,noise=params.noise,lut=params.lut)
+    aug_params=dict(patch_size=224,
+                    slices=params.slices,
+                    noise=params.noise,
+                    lut=params.lut,
+                    nu_strength=params.nu,
+                    nl_mag=params.nl,
+                    thickness=params.th
+                    )
+
     augment_model = create_augment_model(aug_params, train_dataset)
-    augment_model_testing = create_augment_model(aug_params, validate_dataset,testing=True)
+    augment_model_testing = create_augment_model(aug_params, validate_dataset, testing=True)
 
     model = model.cuda()
     #criterion = nn.CrossEntropyLoss()
@@ -347,20 +360,14 @@ if __name__ == '__main__':
     scaler = torch.GradScaler(enabled=use_amp,
                    init_scale= 8192.0)
 
-    #### DEBUG
-    val_info = run_validation_testing_loop(validation_dataloader, model, 
-                        loss_fn = nn.functional.mse_loss if predict_dist else nn.functional.cross_entropy,
-                        predict_dist=predict_dist,
-                        details=False, preprocess_model=augment_model_testing)
-    ####
-
-
     for epoch in range(params.n_epochs):
         print('Epoch {}/{}'.format(epoch+1, params.n_epochs))
         print('-' * 10)
+        epoch_start = time.time()
 
         model.train(True)  # Set model to training mode
         for i_batch, sample_batched in enumerate(training_dataloader):
+            batch_start = time.time()
             if epoch==0 and warmup_iter>0:
                 if i_batch == 0:
                     for g in optimizer.param_groups :
@@ -426,10 +433,12 @@ if __name__ == '__main__':
                 batch_acc  = torch.sum(preds == labels.data).item()
                 log['acc'] = batch_acc/inputs.size(0)
             
+            batch_end = time.time()
             if global_ctr % 10 == 0:
-                print('Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
+                print('Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}\t{:.2f}sec/batch'.format(
                     epoch, i_batch * len(inputs), len(training_dataloader.dataset),
-                    100. * i_batch / len(training_dataloader), batch_loss))
+                    100. * i_batch / len(training_dataloader), batch_loss,
+                    batch_end-batch_start))
             # training stats
             writer.add_scalars('{}/training'.format(params.output),
                                 log, global_ctr)
@@ -490,7 +499,9 @@ if __name__ == '__main__':
             training_log.append(log)
             global_ctr += 1
 
+        epoch_end = time.time()
         model.train(False)  # Set model to evaluation mode
+        epoch_start_val = time.time()
         # run validation at the end of epoch
         if len(validation)>0:
             val_info = run_validation_testing_loop(validation_dataloader,model,details=False,
@@ -542,13 +553,14 @@ if __name__ == '__main__':
             val['epoch']=epoch
             val['ctr']=global_ctr
             validation_log.append(val)
+            epoch_end_val = time.time()
 
             if predict_dist:
-                print('Epoch: {} Validation Loss: {:.4f}'.\
-                    format(epoch, val['loss']))
+                print('Epoch: {} {:.1f}sec Validation Loss: {:.4f}'.\
+                    format(epoch, (epoch_end-epoch_start), val['loss']))
             else:
-                print('Epoch: {} Validation Loss: {:.4f} ACC:{:.4f} TPR:{:.4f} TNR:{:.4f} AUC:{:.4f}'.\
-                    format(epoch, val['loss'], val['acc'], val['tpr'], val['tnr'],val['auc']))
+                print('Epoch: {} {:.1f}sec Validation Loss: {:.4f} ACC:{:.4f} TPR:{:.4f} TNR:{:.4f} AUC:{:.4f}'.\
+                    format(epoch, (epoch_end-epoch_start), val['loss'], val['acc'], val['tpr'], val['tnr'],val['auc']))
         else:
             print('Epoch: {} no validation'.format(epoch))
             
