@@ -3,54 +3,60 @@ import math
 
 import torch
 import torchvision.transforms.functional as F
+from torch.utils.data import Dataset, DataLoader
+import torch.nn.functional as nnf
 
-
-def load_minc_images(path,missing_zero=False):
+def load_minc_slices(path, missing_zero=False, patch_size = [224,224,224]):
+    """
+    Load minc volume and extract 3 orthogonal slices
+    """
     from minc2_simple import minc2_file 
 
-    if os.path.exists(path):
+    if path is not None and os.path.exists(path):
         input_minc=minc2_file(path)
         input_minc.setup_standard_order()
 
-        w=input_minc.load_complete_volume_tensor()
-        sz=w.shape
-        w=(w-w.min())/(w.max()-w.min())-0.5
+        vv = torch.nan_to_num(input_minc.load_complete_volume_tensor(minc2_file.MINC2_DOUBLE),
+                            nan=0.0,posinf=0.0,neginf=0.0)
 
-        input_images = [w[sz[0]//2, :, :],
-                        w[:, :, sz[2]//2],
-                        w[:, sz[1]//2, :]]
-            
-        # flip, resize and crop
+        vv -= vv.min()
+        vv /= vv.quantile(0.99)+1e-3
+        # extract slices
+        sample_size = vv.shape
+        crop=[0,0,0]
+        pad=[[0,0],[0,0],[0,0]]
+
         for i in range(3):
-            # 
-            _scale = min(256.0/input_images[i].shape[0],
-                        256.0/input_images[i].shape[1])
-            # vertical flip and resize
+            if sample_size[i] > patch_size[i]:
+                crop[i] = (sample_size[i] - patch_size[i])//2
+            elif sample_size[i] < patch_size[i]:
+                pad[i][0] = (patch_size[i] - sample_size[i]+1)//2
+                pad[i][1] =  patch_size[i] - sample_size[i]-pad[i][0]
+        
+        cx = [sample_size[0]//2, sample_size[1]//2, sample_size[2]//2]
 
-            new_sz=[ math.floor(input_images[i].shape[0]*_scale),
-                    math.floor(input_images[i].shape[1]*_scale) ]
+        slices = [ vv[cx[0],                        crop[1]:patch_size[1]+crop[1], crop[2]:patch_size[2]+crop[2]].float(), # x
+                   vv[crop[0]:patch_size[0]+crop[0],cx[1],                         crop[2]:patch_size[2]+crop[2]].float(), # y
+                   vv[crop[0]:patch_size[0]+crop[0],crop[1]:patch_size[1]+crop[1], cx[2]].float()] # z
+        
 
-            dummy=torch.full([1, 256, 256],-0.5)
-
-            dummy[:,(256-new_sz[0])//2:(256-new_sz[0])//2+new_sz[0], 
-                    (256-new_sz[1])//2:(256-new_sz[1])//2+new_sz[1]] = \
-                F.resize(input_images[i].flip(0).unsqueeze(0),
-                        size=new_sz, antialias=True)
-
-            # crop, convert to proper type
-            input_images[i]=dummy[:,16:240, 16:240]# +0.5)*255).clamp(0,255).to(torch.uint8)
+        slices_ = [ nnf.pad(slices[0],  [pad[2][0], pad[2][1], pad[1][0], pad[1][1]], "constant", 0.0),
+                    nnf.pad(slices[1],  [pad[2][0], pad[2][1], pad[0][0], pad[0][1]], "constant", 0.0),
+                    nnf.pad(slices[2],  [pad[1][0], pad[1][1], pad[0][0], pad[0][1]], "constant", 0.0),
+                   ]
+        
+        out = torch.stack(slices_)
     else:
         if missing_zero:
-            input_images = [torch.full([1, 224, 224],-0.5),
-                            torch.full([1, 224, 224],-0.5),
-                            torch.full([1, 224, 224],-0.5)]
+            out = torch.full([3, patch_size[0], patch_size[1]],0.0)
         else:
             raise NameError(f"File {path} not found")
    
-    return input_images
+    return out
 
 
 def load_talairach_mgh_images(path):
+    ### TODO: finish this
     import nibabel as nib
     import numpy as np
     from nibabel.affines import apply_affine
@@ -145,4 +151,49 @@ def load_talairach_mgh_images(path):
         input_images[i]=dummy[:,16:240,16:240]
    
     return input_images 
+
+def load_data_list(data_list, data_prefix, missing_zero=False):
+    samples=[]
+    with open(data_list) as f:
+        for l in f.readlines():
+            l=l.strip()
+            if l.startswith('#'):
+                continue
+            fn=os.path.join(data_prefix,l)
+            if os.path.exists(fn):
+                samples.append((fn,l))
+            else:
+                if missing_zero:
+                    samples.append(None)
+                else:
+                    raise NameError(f"File {fn} not found")
+    return samples
+
+class MRIDataset(Dataset):
+    """
+    MRI images dataset
+    """
+
+    def __init__(self, dataset, data_prefix,use_ref=False,missing_zero=False):
+        """
+        Args:
+            root_dir (string): Directory with all the data
+            use_ref  (Boolean): use reference images
+        """
+        super(MRIDataset, self).__init__()
+
+        self.samples = load_data_list(dataset, data_prefix, missing_zero=missing_zero)
+        self.missing_zero = missing_zero
+
+    def __len__(self):
+        return len( self.samples )
+
+    def __getitem__(self, idx):
+        _fn,_id = self.samples[ idx ]
+        # load images 
+
+        # TODO: finish this 
+        _vol = load_minc_slices(_fn, missing_zero=self.missing_zero)
+
+        return (_vol, _id)
 

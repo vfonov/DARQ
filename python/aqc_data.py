@@ -142,7 +142,7 @@ def load_volume(vol):
 
 class QCDataset(Dataset):
     """
-    QC images dataset. Uses sqlite3 database to load data
+    QC images dataset
     """
 
     def __init__(self, dataset, data_prefix):
@@ -203,5 +203,8 @@ class QCDataset(Dataset):
 
         self.qc_samples = pos_samples[0:n_both] + neg_samples[0:n_both]
         self.qc_subjects = set(i.subject for i in self.qc_samples)
+
+
+
 
 

@@ -14,6 +14,7 @@ import io
 import copy
 
 from aqc_data import *
+from aqc_mri import *
 from model.util import *
 
 import torch
@@ -21,8 +22,8 @@ import torch.nn as nn
 
 from torch.autograd import Variable
 
+default_data_dir=os.path.dirname(os.path.abspath(sys.argv[0]))
 
-default_data_dir=os.path.dirname(sys.argv[0])
 if default_data_dir=='' or default_data_dir is None: default_data_dir='.'
 
 def parse_options():
@@ -32,8 +33,6 @@ def parse_options():
 
     parser.add_argument("--ref", action="store_true", default=False,
                         help="Use reference images")
-    parser.add_argument("--image", type=str,
-                        help="Input image prefix: <prefix>_{0,1,2}.jpg")
     parser.add_argument("--volume", type=str,
                         help="Input minc volume (need minc2 simple)")
     parser.add_argument("--resample", type=str,
@@ -54,8 +53,6 @@ def parse_options():
     parser.add_argument('--batch-workers', type=int, default=1,
                         dest='batch_workers',
                         help='Number of workers in batch mode')
-    parser.add_argument('--batch_pics', action="store_true", default=False,
-                        help='Process QC pics in batch mode instead of MINC volumes')
     parser.add_argument('--gpu', action="store_true", default=False,
                         help='Run inference in gpu')
     parser.add_argument("--dist",action="store_true",default=False,
@@ -76,19 +73,18 @@ if __name__ == '__main__':
     params = parse_options()
     use_ref = params.ref
 
-
     if params.load is None:
 
         if params.dist:
-            params.load = default_data_dir + os.sep \
-                + 'dist' + os.sep \
-                + 'model_dist_' + params.net + ('_ref' if params.ref else '') + os.sep + \
-                'best_loss.pth' 
+            params.load = os.path.join( default_data_dir,
+                'dist',
+                'model_dist_' + params.net + ('_ref' if params.ref else ''),
+                'best_loss.pth' )
         else:
-            params.load = default_data_dir + os.sep \
-                + 'cls' + os.sep \
-                + 'model_' + params.net + ('_ref' if params.ref else '') + os.sep + \
-                'best_tnr.pth'
+            params.load = os.path.join(default_data_dir ,
+                'cls',
+                'model_' + params.net + ('_ref' if params.ref else ''),
+                'best_tnr_0_8.pth')
 
     if not os.path.exists(params.load):
        print("Missing model:",params.load,file=sys.stderr)
@@ -102,14 +98,12 @@ if __name__ == '__main__':
 
     with torch.no_grad():
         if params.batch is not None:
-            if not params.batch_pics :
-                dataset = MincVolumesDataset(csv_file=params.batch,
-                    data_prefix=default_data_dir + "/../data",
-                    use_ref=use_ref,missing_zero=params.missing_zero)
-            else:
-                dataset = QCImagesDataset(csv_file=params.batch,
-                            data_prefix=default_data_dir + "/../data",
-                            use_ref=use_ref)
+
+            pfx=os.path.dirname(params.batch)
+
+            dataset = MRIDataset(params.batch, pfx,
+                use_ref=use_ref,
+                missing_zero=params.missing_zero)
 
             dataloader = DataLoader(dataset,
                             batch_size=params.batch_size,
@@ -117,10 +111,14 @@ if __name__ == '__main__':
                             num_workers=params.batch_workers)
 
             for i_batch, sample_batched in enumerate(dataloader):
-                inputs, files = sample_batched
-                if params.gpu: inputs = inputs.cuda()
+                inputs, ids = sample_batched
+                if params.gpu: 
+                    inputs = inputs.cuda()
+
                 outputs = model(inputs)
-                if params.gpu: outputs = outputs.cpu()
+
+                if params.gpu: 
+                    outputs = outputs.cpu()
                 
                 if params.dist:
                     if params.raw:
@@ -128,7 +126,7 @@ if __name__ == '__main__':
                     else:
                         preds   = torch.max(outputs, 1)[1].tolist()
 
-                    for i,j in zip(files,preds):
+                    for i,j in zip(ids,preds):
                         print("{},{}".format(i,j))
                 else:
                     outputs = nn.functional.softmax(outputs,1)
@@ -137,19 +135,10 @@ if __name__ == '__main__':
                     else:
                         preds   = torch.max(outputs, 1)[1].tolist()
 
-                    for i,j in zip(files,preds):
+                    for i,j in zip(ids,preds):
                         print("{},{}".format(i,j))
         else:
-            if params.image is not None:
-                if os.path.exists(params.image+'_0.jpg'):
-                    inputs = load_qc_images( [params.image+'_0.jpg', params.image+'_1.jpg', params.image+'_2.jpg'])
-                elif os.path.exists(params.image+'_0.png'):
-                    inputs = load_qc_images( [params.image+'_0.png', params.image+'_1.png', params.image+'_2.png'])
-                else:
-                    print("Missing input image(s): {}_0.jpg or {}_0.png".format(params.image,params.image),file=sys.stderr)
-                    exit(1)
-
-            elif params.volume is not None:
+            if params.volume is not None:
                 tmpdir=None
                 volume=params.volume
 
@@ -170,7 +159,7 @@ if __name__ == '__main__':
                         raise
                     volume=tmp_vol
                 
-                inputs = load_minc_images(volume,missing_zero=params.missing_zero)
+                inputs = load_minc_slices(volume, missing_zero=params.missing_zero)
                 if tmpdir is not None:
                     shutil.rmtree(tmpdir)
             elif params.freesurfer is not None:
@@ -203,20 +192,27 @@ if __name__ == '__main__':
                 exit(1)
             
             if use_ref:
-               ref_inputs = load_qc_images(
-                           [ default_data_dir + "/../data/" + "mni_icbm152_t1_tal_nlin_sym_09c_0.jpg",
-                             default_data_dir + "/../data/" + "mni_icbm152_t1_tal_nlin_sym_09c_1.jpg",
-                             default_data_dir + "/../data/" + "mni_icbm152_t1_tal_nlin_sym_09c_2.jpg" ])
+            #    ref_inputs = load_qc_images(
+            #                [ default_data_dir + "/../data/" + "mni_icbm152_t1_tal_nlin_sym_09c_0.jpg",
+            #                  default_data_dir + "/../data/" + "mni_icbm152_t1_tal_nlin_sym_09c_1.jpg",
+            #                  default_data_dir + "/../data/" + "mni_icbm152_t1_tal_nlin_sym_09c_2.jpg" ])
 
-               inputs = torch.cat( [ item for sublist in zip(inputs, ref_inputs) for item in sublist ] ).unsqueeze_(0)
+            #    inputs = torch.cat( [ item for sublist in zip(inputs, ref_inputs) for item in sublist ] ).unsqueeze_(0)
+                pass # TODO: fix this
             else:
               # convert inputs into properly formated tensor
               # with a single batch dimension
-              inputs = torch.cat( inputs ).unsqueeze_(0)
+              #inputs = torch.cat( inputs ).unsqueeze_(0)
+              pass
 
-            if params.gpu: inputs = inputs.cuda()
-            outputs = model(inputs)
-            if params.gpu: outputs = outputs.cpu()
+            if params.gpu: 
+                inputs = inputs.cuda()
+
+            with torch.amp.autocast('cuda' if params.gpu else 'cpu'):
+                outputs = model(inputs)
+
+            if params.gpu: 
+                outputs = outputs.cpu()
 
             if params.dist:
                 outputs = outputs[0,0]
@@ -235,4 +231,3 @@ if __name__ == '__main__':
                     print("Fail")
             else:
                 exit(0 if preds[0]==1 else 1)
-
