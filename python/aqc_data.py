@@ -29,7 +29,8 @@ QC_entry = collections.namedtuple(
 
 def load_full_db(qc_db_path, 
                 data_prefix, 
-                table="qc_npy"
+                table="qc_npy",
+                dist=False
                 ):
     """Load complete QC database into memory
     """
@@ -37,22 +38,24 @@ def load_full_db(qc_db_path,
 
     with sqlite3.connect( qc_db_path ) as qc_db:
 
-        query = f"""select variant,cohort,subject,visit,vol,pass,N from {table} """
+        if dist:
+            query = f"""select variant,cohort,subject,visit,vol,'FALSE',N,dist from {table} """
+        else:
+            query = f"""select variant,cohort,subject,visit,vol,pass,N,-1 from {table} """
 
         samples = []
 
         for line in qc_db.execute(query):
-            variant, cohort, subject, visit, vol, _pass, N = line
+            variant, cohort, subject, visit, vol, _pass, N, dist = line
 
             vol=os.path.join(data_prefix,vol)
 
             if _pass == 'TRUE': 
-                status=1 
+                status=1
             else: 
-                status=0 
+                status=0
 
             _id='{}:{}:{}:{}:{}'.format(variant, cohort, subject, visit,N)
-            dist=-1
             if os.path.exists(vol):
                 samples.append( QC_entry( _id, status, vol, variant, cohort, subject, visit, float(dist) ))
             else:
@@ -98,6 +101,7 @@ def init_cv(dataset, fold=0, folds=8, validation=5, shuffle=False, seed=None):
     return [ dataset[i] for i in training_samples   ], \
            [ dataset[i] for i in validation_samples ], \
            [ dataset[i] for i in testing_samples    ]
+
 
 def split_dataset(all_samples, fold=0, folds=8, validation=5, 
     shuffle=False, seed=None):
@@ -162,7 +166,6 @@ class QCDataset(Dataset):
             self.sample_size = _vol.shape
         else:
             self.sample_size = None
-
 
     def __len__(self):
         return len( self.qc_samples )

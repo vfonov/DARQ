@@ -250,7 +250,8 @@ if __name__ == '__main__':
     lr_gamma = params.lr_gamma
 
     all_samples_main = load_full_db(db_name,
-                   data_prefix, table="qc_npy")
+                   data_prefix, table="qc_npy",
+                   dist=params.dist)
 
     print("Main samples: {}".format(len(all_samples_main)))
 
@@ -286,7 +287,8 @@ if __name__ == '__main__':
                           drop_last=False)
 
     model = get_qc_model(params, use_ref=params.ref,
-                        pretrained=params.pretrained)
+                        pretrained=params.pretrained,
+                        predict_dist=params.dist )
 
     aug_params=dict(patch_size=224,
                     slices=params.slices,
@@ -377,8 +379,9 @@ if __name__ == '__main__':
                         g[ 'lr' ] = init_lr
 
             inputs = sample_batched['volume'].cuda()
+            
             if predict_dist:
-                dist = sample_batched['dist'].float().cuda()
+                dist = sample_batched['dist'].half().cuda()
             else:
                 labels = sample_batched['status'].cuda()
 
