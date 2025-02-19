@@ -30,7 +30,8 @@ QC_entry = collections.namedtuple(
 def load_full_db(qc_db_path, 
                 data_prefix, 
                 table="qc_npy",
-                dist=False
+                dist=False,
+                dist_calc=False
                 ):
     """Load complete QC database into memory
     """
@@ -39,14 +40,24 @@ def load_full_db(qc_db_path,
     with sqlite3.connect( qc_db_path ) as qc_db:
 
         if dist:
-            query = f"""select variant,cohort,subject,visit,vol,'FALSE',N,dist from {table} """
+            if dist_calc:
+                query = f"""select cohort,subject,visit,vol,N from {table} """
+            else:
+                query = f"""select variant,cohort,subject,visit,vol,'FALSE',N,dist from {table} """
         else:
             query = f"""select variant,cohort,subject,visit,vol,pass,N,-1 from {table} """
 
         samples = []
 
         for line in qc_db.execute(query):
-            variant, cohort, subject, visit, vol, _pass, N, dist = line
+            if dist_calc:
+                cohort, subject, visit, vol, N = line
+                dist = -1
+                _pass = 'FALSE'
+                variant = 'ref'
+            else:
+                variant, cohort, subject, visit, vol, _pass, N, dist = line
+
 
             vol=os.path.join(data_prefix,vol)
 

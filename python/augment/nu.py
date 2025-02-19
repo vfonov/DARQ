@@ -38,7 +38,7 @@ class AugNu(nn.Module):
     @torch.autocast(device_type="cuda")
     def forward(self,x):
         if self.random_nu is not None:
-            batch_mri = x
+            batch_mri = x['img']
 
             ran_nu_smooth=self.random_nu.get('smooth',0.0)
             ran_nu_kern=self.random_nu.get('kern',7)
@@ -67,6 +67,6 @@ class AugNu(nn.Module):
                     # convert to exponent scale
                     _random_nu_grid_hr.exp_()
                     batch_mri *= _random_nu_grid_hr/_random_nu_grid_hr.mean([2,3,4], keepdim=True)
-            
-        return batch_mri
+            x['img'] = batch_mri
+        return x
             

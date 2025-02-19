@@ -34,7 +34,7 @@ class AugNoise(nn.Module):
     @torch.autocast(device_type="cuda")
     def forward(self,x):
         # global multiplicative random value
-        mri = x
+        mri = x['img']
 
         sz     = mri.size()
         bs     = sz[0]
@@ -60,5 +60,6 @@ class AugNoise(nn.Module):
         if self.corrupt_noise is not None and self.corrupt_noise>0.0:
             _noise_corrupt = torch.lt(torch.empty_like(mri).uniform_(), self.corrupt_noise)
             mri[_noise_corrupt] = 0.0
-
-        return mri
+            
+        x['img']=mri
+        return x

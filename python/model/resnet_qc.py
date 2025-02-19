@@ -139,6 +139,7 @@ class ResNetQC(nn.Module):
         zero_init_residual: bool = False,
         groups: int = 1,
         width_per_group: int = 64,
+        patch_size: int = 224,
         replace_stride_with_dilation: Optional[List[bool]] = None,
         norm_layer: Optional[Callable[..., nn.Module]] = None
     ) -> None:
@@ -152,6 +153,8 @@ class ResNetQC(nn.Module):
         self.inplanes = 64
         self.dilation = 1
         self.expansion = block.expansion
+        self.patch_size = patch_size
+        self.addon_kernel_size = patch_size // 32
 
         if replace_stride_with_dilation is None:
             # each element in the tuple indicates if we should replace
@@ -186,7 +189,7 @@ class ResNetQC(nn.Module):
             nn.Conv2d(512*block.expansion, 32, kernel_size=1, stride=1, padding=0,bias=True),
             nn.BatchNorm2d(32),
             nn.ReLU(inplace=False),
-            nn.Conv2d(32, 32, kernel_size=7, stride=1, padding=0,bias=True),
+            nn.Conv2d(32, 32, kernel_size=self.addon_kernel_size, stride=1, padding=0,bias=True),
             nn.BatchNorm2d(32),
             nn.ReLU(inplace=False),
             nn.Conv2d(32, 32, kernel_size=1, stride=1, padding=0,bias=True),
@@ -243,7 +246,7 @@ class ResNetQC(nn.Module):
 
         # split feats into batches
         # for core resnet based part
-        x = x.view(-1, 2 if self.use_ref else 1 ,224,224)
+        x = x.view(-1, 2 if self.use_ref else 1 ,self.patch_size,self.patch_size)
 
         x = self.conv1(x)
         x = self.bn1(x)
@@ -256,7 +259,7 @@ class ResNetQC(nn.Module):
         x = self.layer4(x)
 
         # merge batches together
-        x = x.view(-1, 512*self.feat * self.expansion, 7, 7)
+        x = x.view(-1, 512*self.feat * self.expansion, self.addon_kernel_size, self.addon_kernel_size)
         x = self.addon(x)
         x = x.view(x.size(0), -1)
 

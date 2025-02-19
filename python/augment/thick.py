@@ -55,7 +55,7 @@ class AugThickSlices(nn.Module):
     @torch.autocast(device_type="cuda")
     def forward(self, x):
         if self.smooth is not None:
-            batch_mri = x
+            batch_mri = x['img']
             # apply coordinate-wise smoothing
             for i in range(3):
                 if self.thickness[i]>1:
@@ -64,5 +64,6 @@ class AugThickSlices(nn.Module):
                         # randomly choose smoothing kernel
                         if j>1:
                             batch_mri = self.smooth[i][j-2].forward(batch_mri)
-        return batch_mri
+            x['img']=batch_mri
+        return x
             

@@ -52,7 +52,7 @@ class AugLUT(nn.Module):
     @torch.autocast(device_type="cuda")
     def forward(self,x):
         if self.strength > 0.0:
-            mri    = x
+            mri    = x['img']
             sz     = mri.shape
             bs     = sz[0]
 
@@ -69,8 +69,8 @@ class AugLUT(nn.Module):
                 y = (y-y.amin(dim=1,keepdim=True))/(y.amax(dim=1,keepdim=True)-y.amin(dim=1,keepdim=True) + 1e-5)
 
                 # apply random lut
-                _out = interp1d_pytorch_batched(ran_x, y, mri.reshape(bs,-1)).reshape(mri.shape)
+                x['img'] = interp1d_pytorch_batched(ran_x, y, mri.reshape(bs,-1)).reshape(mri.shape)
             
-            return _out
+            return x
         else: # bypass
             return x 

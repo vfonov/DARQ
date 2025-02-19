@@ -8,23 +8,25 @@ class AugSqueeze(nn.Module):
     """
     Remove extra dimension (for pre-sliced data)
     """
-    def __init__(self,autonorm=True):
+    def __init__(self):
         super(AugSqueeze, self).__init__()
 
     @torch.autocast(device_type="cuda")
     def forward(self, x):
-        return torch.squeeze(x,1)
+        x['img']=torch.squeeze(x['img'],1)
+        return x
 
 class AugClamp(nn.Module):
     """
     Remove NaNs and infinities, clamp to 0-1
     """
-    def __init__(self,autonorm=True):
+    def __init__(self):
         super(AugClamp, self).__init__()
 
     @torch.autocast(device_type="cuda")
     def forward(self, x):
-        return torch.nan_to_num(x,nan=0.0,posinf=1.0,neginf=0.0).clip(0.0,1.0)
+        x['img']=torch.nan_to_num(x['img'],nan=0.0,posinf=1.0,neginf=0.0).clip(0.0,1.0)
+        return x
 
 
 
@@ -40,8 +42,20 @@ def create_augment_model(params, dataset,
     nu_strength=params['nu_strength']
     nl_mag=params['nl_mag']
     thickness=params['thickness']
+    dist_calc=params['dist_calc']
 
     print(f"{sample_size=},{patch_size=},{slices=}")
+
+    if dist_calc:
+        spatial_opts=dict(rot=5,scale=0.1,shift=5.0,shear=0.2,
+                        nl_step=10,
+                        nl_mag=nl_mag,
+                        nl_smooth=0.5,nl_kern=5)
+    else:
+        spatial_opts=dict(rot=0.01,scale=0.01,shift=0.0,shear=0.0,
+                        nl_step=10,
+                        nl_mag=nl_mag,
+                        nl_smooth=0.5,nl_kern=5)
 
     if slices: # simpler dataset, only add noise and LUT
         if testing:
@@ -58,10 +72,18 @@ def create_augment_model(params, dataset,
                 )
     else:
         if testing:
-            mod=nn.Sequential(
-                Autonorm(),
-                AugSlices(sample_size,patch_size),
-            )
+            if dist_calc:
+                mod=nn.Sequential(
+                    AugSpatial(sample_size, 
+                        spatial_opts,dtype=dtype,device=device),
+                    Autonorm(),
+                    AugSlices(sample_size,patch_size),
+                )
+            else:
+                mod=nn.Sequential(
+                    Autonorm(),
+                    AugSlices(sample_size,patch_size),
+                )
         else:
             mod=nn.Sequential(
                 Autonorm(),
@@ -70,10 +92,7 @@ def create_augment_model(params, dataset,
                 AugNoise(add_noise=noise),
                 AugThickSlices(sample_size,dict(thickness=[thickness,thickness,thickness]),dtype=dtype,device=device) ,
                 AugSpatial(sample_size, 
-                    dict(rot=0.01,scale=0.01,shift=0.0,shear=0.0,
-                        nl_step=10,
-                        nl_mag=nl_mag,
-                        nl_smooth=0.5,nl_kern=5),dtype=dtype,device=device),
+                    spatial_opts,dtype=dtype,device=device),
                 Autonorm(),
                 AugSlices(sample_size,patch_size)
             )

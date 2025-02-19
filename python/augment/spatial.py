@@ -63,11 +63,31 @@ class AugSpatial(nn.Module):
             self.integrator = None
             self.nl_smooth = None
     
+    def calc_dist_affine(self, diff_xfm):
+        """
+        Calculate the distance between ideal transform and simulated
+        """
+        #return torch.norm(torch.eye(4, device=affine.device, dtype=affine.dtype) - affine, p='fro', dim=(1,2))
+        edges=[ [-60,-94, -52],
+                [ 60, 50, 78] ]
+        
+        dist=0.0
+        for x in range(2):
+            for y in range(2):
+                for z in range(2):
+                    p_in = torch.Tensor( [edges[x][0], edges[y][1], edges[z][2]])
+                    p_out = p_in@diff_xfm[:3,:3].T+diff_xfm[:3,3]
+
+                    dst_=torch.linalg.vector_norm(p_in-p_out,ord=2)
+                    if dst_>dist: dist=dst_
+        return dist
+
+
     @torch.autocast(device_type="cuda")
     def forward(self,x):
         if self.random_spatial_transform is not None:
 
-            batch_mri  = x
+            batch_mri  = x['img']
             batch_size = batch_mri.shape[0]
 
             # create random affine transform
@@ -97,7 +117,10 @@ class AugSpatial(nn.Module):
 
                     _random_affine = _random_shift @ _random_shear @ _random_scale @ _random_rot
 
+                    batch_dist_.append(self.calc_dist_affine(_random_affine))
+
                     _full_affine = self.v2p @ self.w2v @ _random_affine @ self.v2w @ self.p2v
+
 
                     _random_affine_grid = grid_to_flow( affine2grid(_full_affine, _batch_mri.shape, 
                                                     device=_batch_mri.device, dtype=self.dtype),
@@ -135,6 +158,7 @@ class AugSpatial(nn.Module):
                     batch_mri_.append(_batch_mri)
 
                 # now put it all together
-                batch_mri = torch.cat(batch_mri_, dim=0)
+                x['dist'] = torch.stack(batch_dist_).type(self.dtype).to(self.device)
+                x['img'] = torch.cat(batch_mri_, dim=0)
 
-        return batch_mri
+        return x

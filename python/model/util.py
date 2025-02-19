@@ -32,7 +32,8 @@ def save_model(model, name, base, fold=0, folds=0, cpu=False):
         torch.save(model.state_dict(), path)
 
 
-def get_qc_model(params, use_ref=False, pretrained=True, predict_dist=False):
+def get_qc_model(params, use_ref=False, pretrained=True, 
+                 predict_dist=False,patch_size=224):
     """
     Generate QC model
      params.net: 'r18', 'r34', 'r50','r101','r152',
@@ -43,17 +44,17 @@ def get_qc_model(params, use_ref=False, pretrained=True, predict_dist=False):
     num_classes=1 if predict_dist else 2
 
     if params.net=='r34':
-        model=resnet_qc_34(pretrained=(pretrained and params.load is None),use_ref=use_ref,num_classes=num_classes)
+        model=resnet_qc_34(pretrained=(pretrained and params.load is None),use_ref=use_ref,num_classes=num_classes,patch_size=patch_size)
     elif params.net=='r50':
-        model=resnet_qc_50(pretrained=(pretrained and params.load is None),use_ref=use_ref,num_classes=num_classes)
+        model=resnet_qc_50(pretrained=(pretrained and params.load is None),use_ref=use_ref,num_classes=num_classes,patch_size=patch_size)
     elif params.net=='r101':
-        model=resnet_qc_101(pretrained=(pretrained and params.load is None),use_ref=use_ref,num_classes=num_classes)
+        model=resnet_qc_101(pretrained=(pretrained and params.load is None),use_ref=use_ref,num_classes=num_classes,patch_size=patch_size)
     elif params.net=='r152':
-        model=resnet_qc_152(pretrained=(pretrained and params.load is None),use_ref=use_ref,num_classes=num_classes)
+        model=resnet_qc_152(pretrained=(pretrained and params.load is None),use_ref=use_ref,num_classes=num_classes,patch_size=patch_size)
     elif params.net=='sq101':
         model=squeezenet_qc(pretrained=(pretrained and params.load is None),use_ref=use_ref,num_classes=num_classes)
     elif params.net=='r18':
-        model=resnet_qc_18(pretrained=(pretrained and params.load is None),use_ref=use_ref,num_classes=num_classes)
+        model=resnet_qc_18(pretrained=(pretrained and params.load is None),use_ref=use_ref,num_classes=num_classes,patch_size=patch_size)
     elif params.net=='x50': 
         model=resnext_qc_50_32x4d(pretrained=(pretrained and params.load is None),use_ref=use_ref,num_classes=num_classes)
     elif params.net=='x101': 

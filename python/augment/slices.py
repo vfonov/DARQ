@@ -39,8 +39,8 @@ class AugSlices(nn.Module):
         print(f"AugSlices: crop={crop} pad={pad} cx={self.cx}")
     
     @torch.autocast(device_type="cuda")
-    def forward(self,x):
-
+    def forward(self,d):
+        x=d['img']
         slices = [ x[:,:,self.cx[0], self.crop[1]:self.patch_size[1]+self.crop[1], self.crop[2]:self.patch_size[2]+self.crop[2]], # x
                    x[:,:,self.crop[0]:self.patch_size[0]+self.crop[0],self.cx[1],self.crop[2]:self.patch_size[2]+self.crop[2]], # y
                    x[:,:,self.crop[0]:self.patch_size[0]+self.crop[0],self.crop[1]:self.patch_size[1]+self.crop[1],self.cx[2]]]
@@ -49,5 +49,6 @@ class AugSlices(nn.Module):
                    F.pad(slices[1], (self.pad[2][0],self.pad[2][1],self.pad[0][0],self.pad[0][1]), "constant",0.0),
                    F.pad(slices[2], (self.pad[1][0],self.pad[1][1],self.pad[0][0],self.pad[0][1]), "constant",0.0),
                    ]
-
-        return torch.concat(slices,1)
+        d['img'] = torch.concat(slices,1)
+        return d
+    
