@@ -452,12 +452,12 @@ if __name__ == '__main__':
 
             if not predict_dist:
                 batch_acc  = torch.sum(preds == labels.data).item()
-                log['acc'] = batch_acc/inputs.size(0)
+                log['acc'] = batch_acc/inputs['img'].size(0)
             
             batch_end = time.time()
             if global_ctr % 10 == 0:
                 print('Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}\t{:.2f}sec/batch'.format(
-                    epoch, i_batch * len(inputs), len(training_dataloader.dataset),
+                    epoch, i_batch * len(inputs['img']), len(training_dataloader.dataset),
                     100. * i_batch / len(training_dataloader), batch_loss,
                     batch_end-batch_start))
             # training stats

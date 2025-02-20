@@ -47,7 +47,7 @@ def create_augment_model(params, dataset,
     print(f"{sample_size=},{patch_size=},{slices=}")
 
     if dist_calc:
-        spatial_opts=dict(rot=5,scale=0.1,shift=5.0,shear=0.2,
+        spatial_opts=dict(rot=0.8,scale=0.1,shift=5.0,shear=0.1, # up to 45 degrees rotation and 10% scaling
                         nl_step=10,
                         nl_mag=nl_mag,
                         nl_smooth=0.5,nl_kern=5)
