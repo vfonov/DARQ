@@ -164,7 +164,7 @@ def load_data_list(data_list, data_prefix, missing_zero=False):
                 samples.append((fn,l))
             else:
                 if missing_zero:
-                    samples.append(None)
+                    samples.append((None,l))
                 else:
                     raise NameError(f"File {fn} not found")
     return samples
