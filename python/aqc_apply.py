@@ -43,11 +43,11 @@ def parse_options():
                         help="Network type",default='r18')
     parser.add_argument('--raw', action="store_true", default=False,
                         help='Print raw score [0:1]')
-    parser.add_argument('-q', '--quiet', action="store_true",default=False,   
+    parser.add_argument('-q', '--quiet', action="store_true",default=False,
                         help='Quiet mode, set status code to 0 - Pass, 1 - fail')
-    parser.add_argument('--batch', type=str,   
+    parser.add_argument('--batch', type=str,
                         help='Process minc files in batch mode, provide list of files')
-    parser.add_argument('--batch-size', type=int, default=1, 
+    parser.add_argument('--batch-size', type=int, default=1,
                         dest='batch_size',
                         help='Batch size in batch mode')
     parser.add_argument('--batch-workers', type=int, default=1,
@@ -119,14 +119,14 @@ if __name__ == '__main__':
 
             for i_batch, sample_batched in enumerate(dataloader):
                 inputs, ids = sample_batched
-                if params.gpu: 
+                if params.gpu:
                     inputs = inputs.cuda()
 
                 outputs = model(inputs)
 
-                if params.gpu: 
+                if params.gpu:
                     outputs = outputs.cpu()
-                
+
                 if params.dist:
                     if params.raw:
                         preds   = outputs[:,0].tolist()
