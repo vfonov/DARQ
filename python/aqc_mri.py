@@ -6,7 +6,8 @@ import torchvision.transforms.functional as F
 from torch.utils.data import Dataset, DataLoader
 import torch.nn.functional as nnf
 
-def load_minc_slices(path, missing_zero=False, patch_size = [224,224,224]):
+def load_minc_slices(path, missing_zero=False, 
+                     patch_size = [224,224,224]):
     """
     Load minc volume and extract 3 orthogonal slices
     """
@@ -174,7 +175,10 @@ class MRIDataset(Dataset):
     MRI images dataset
     """
 
-    def __init__(self, dataset, data_prefix,use_ref=False,missing_zero=False):
+    def __init__(self, dataset, data_prefix,
+                 use_ref=False,
+                 missing_zero=False,
+                 patch_size = [224,224,224]):
         """
         Args:
             root_dir (string): Directory with all the data
@@ -184,6 +188,7 @@ class MRIDataset(Dataset):
 
         self.samples = load_data_list(dataset, data_prefix, missing_zero=missing_zero)
         self.missing_zero = missing_zero
+        self.patch_size=patch_size
 
     def __len__(self):
         return len( self.samples )
@@ -193,7 +198,8 @@ class MRIDataset(Dataset):
         # load images 
 
         # TODO: finish this 
-        _vol = load_minc_slices(_fn, missing_zero=self.missing_zero)
+        _vol = load_minc_slices(_fn, missing_zero=self.missing_zero,
+                                patch_size=self.patch_size)
 
         return (_vol, _id)
 

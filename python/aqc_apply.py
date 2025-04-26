@@ -57,12 +57,16 @@ def parse_options():
                         help='Run inference in gpu')
     parser.add_argument("--dist",action="store_true",default=False,
                         help="Predict misregistration distance instead of class membership")
+    parser.add_argument("--threshold",default=10.0,type=float,
+                        help="Fail threshold for distance")
     parser.add_argument("--freesurfer",default=None,
                         help="Process freesurfer output from recon all, provide subject directory, need mri_convert and nibabel ")
     parser.add_argument('--debug', action="store_true", default=False,
                         help='Print debug messages')
     parser.add_argument('--missing-zero', action="store_true", default=False,
                         help='Missing input minc volume will produce low score instead of exception')
+    parser.add_argument("--patch",type=int, default=224,
+                        help="Patch size")
 
     params = parser.parse_args()
     
@@ -90,7 +94,9 @@ if __name__ == '__main__':
        print("Missing model:",params.load,file=sys.stderr)
        exit(100)
 
-    model = get_qc_model(params, use_ref=use_ref, predict_dist=params.dist)
+    model = get_qc_model(params, use_ref=use_ref, 
+                         predict_dist=params.dist,
+                         patch_size=params.patch)
     model.train(False)
 
     if params.gpu:
@@ -103,7 +109,8 @@ if __name__ == '__main__':
 
             dataset = MRIDataset(params.batch, pfx,
                 use_ref=use_ref,
-                missing_zero=params.missing_zero)
+                missing_zero=params.missing_zero,
+                patch_size=[params.patch,params.patch,params.patch])
 
             dataloader = DataLoader(dataset,
                             batch_size=params.batch_size,
@@ -147,6 +154,7 @@ if __name__ == '__main__':
                     tmpdir=tempfile.mkdtemp(prefix='deep_qc')
                     tmp_vol=tmpdir+os.sep+'tmp.mnc'
                     # provide sampling in the standard space
+
                     try:
                         args=['mincresample', '-q' ,'-transform',params.resample,
                             '-dircos', '1' ,'0', '0','0', '1', '0', '0', '0', '1', 
@@ -159,9 +167,13 @@ if __name__ == '__main__':
                         raise
                     volume=tmp_vol
                 
-                inputs = load_minc_slices(volume, missing_zero=params.missing_zero)
+                inputs = load_minc_slices(volume, 
+                        missing_zero=params.missing_zero,
+                        patch_size=[params.patch,params.patch,params.patch])
+                
                 if tmpdir is not None:
                     shutil.rmtree(tmpdir)
+
             elif params.freesurfer is not None:
                 in_mgz=params.freesurfer+os.sep+'mri'+os.sep+'orig.mgz'
                 in_xfm=params.freesurfer+os.sep+'mri'+os.sep+'transforms'+os.sep+'talairach.xfm'
@@ -216,7 +228,7 @@ if __name__ == '__main__':
 
             if params.dist:
                 outputs = outputs[0,0]
-                preds   = (outputs>10.0).squeeze() # TODO : parametrize threshold
+                preds   = (outputs>params.threshold).squeeze() # TODO : parametrize threshold
             else:
                 outputs = nn.functional.softmax(outputs,1)
                 preds   = torch.max(outputs,1)[1].squeeze()

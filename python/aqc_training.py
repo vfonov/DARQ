@@ -235,6 +235,8 @@ def parse_options():
                         help="Nonuniformity strength")
     parser.add_argument("--nl",type=float, default=0.1,
                         help="Nonlinar transform strength")
+    parser.add_argument("--lin",type=float, default=1.0,
+                        help="Random linear transform strength")
     parser.add_argument("--th",type=int, default=1,
                         help="maximum thickness")
 
@@ -308,6 +310,7 @@ if __name__ == '__main__':
                     lut=params.lut,
                     nu_strength=params.nu,
                     nl_mag=params.nl,
+                    lin_mag=params.lin,
                     thickness=params.th,
                     dist_calc=dist_calc
                     )
@@ -543,30 +546,44 @@ if __name__ == '__main__':
                         best_loss_epoch = epoch
                         best_loss_ctr = global_ctr
                         best_model_loss = copy.deepcopy(model.state_dict())
+                        if params.save_best:
+                            save_model(model,"best_loss", params.output, fold=params.fold, folds=params.folds, cpu=params.save_cpu)
             else:
                 if val['acc'] > best_acc:
                         best_acc = val['acc']
                         best_acc_epoch = epoch
                         best_acc_ctr = global_ctr
                         best_model_acc = copy.deepcopy(model.state_dict())
+                        if params.save_best:
+                            save_model(model,"best_acc", params.output, fold=params.fold, folds=params.folds, cpu=params.save_cpu)
+
+
 
                 if val['tpr'] > best_tpr:
                         best_tpr = val['tpr']
                         best_tpr_epoch = epoch
                         best_tpr_ctr = global_ctr
                         best_model_tpr = copy.deepcopy(model.state_dict())
+                        if params.save_best:
+                            save_model(model,"best_tpr", params.output, fold=params.fold, folds=params.folds, cpu=params.save_cpu)
+                            
 
                 if val['tnr'] > best_tnr:
                         best_tnr = val['tnr']
                         best_tnr_epoch = epoch
                         best_tnr_ctr = global_ctr
                         best_model_tnr = copy.deepcopy(model.state_dict())
+                        if params.save_best:
+                            save_model(model,"best_tnr", params.output, fold=params.fold, folds=params.folds, cpu=params.save_cpu)
+                        
 
                 if val['auc'] > best_auc:
                         best_auc = val['auc']
                         best_auc_epoch = epoch
                         best_auc_ctr = global_ctr
                         best_model_auc = copy.deepcopy(model.state_dict())
+                        if params.save_best:
+                            save_model(model,"best_auc", params.output, fold=params.fold, folds=params.folds, cpu=params.save_cpu)
             
             writer.add_scalars('{}/validation_epoch'.format(params.output), 
                                 val,
@@ -590,23 +607,6 @@ if __name__ == '__main__':
     final_model = copy.deepcopy(model.state_dict())
     if params.save_final:
         save_model(model,"final", params.output, fold=params.fold, folds=params.folds, cpu=params.save_cpu)
-
-    if len(validation)>0 and params.save_best:
-        if predict_dist:
-            model.load_state_dict(best_model_loss)
-            save_model(model,"best_loss", params.output, fold=params.fold, folds=params.folds, cpu=params.save_cpu)
-        else:
-            model.load_state_dict(best_model_acc)
-            save_model(model,"best_acc", params.output, fold=params.fold, folds=params.folds, cpu=params.save_cpu)
-            
-            model.load_state_dict(best_model_tpr)
-            save_model(model,"best_tpr", params.output, fold=params.fold, folds=params.folds, cpu=params.save_cpu)
-                
-            model.load_state_dict(best_model_tnr)
-            save_model(model,"best_tnr", params.output, fold=params.fold, folds=params.folds, cpu=params.save_cpu)
-            
-            model.load_state_dict(best_model_auc)
-            save_model(model,"best_auc", params.output, fold=params.fold, folds=params.folds, cpu=params.save_cpu)
 
     testing_final={}
     testing_best_acc={}
@@ -656,7 +656,6 @@ if __name__ == '__main__':
                     model.load_state_dict(best_model_tnr)
                     testing_best_tnr = run_validation_testing_loop(testing_dataloader, model, details=True,
                         preprocess_model=augment_model_testing)
-
 
     if not os.path.exists(params.output):
         os.makedirs(params.output)
